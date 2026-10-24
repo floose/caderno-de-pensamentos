@@ -88,15 +88,15 @@ Comprovar, antes de integrar a interface, que a fixture sintética de dois texto
 - `tests/fixtures/pixel.png` continua sendo uma imagem sintética pequena para os testes automatizados existentes.
 - O cenário hipotético de 40 MB excede os limites implementados; não é requisito atual nem capacidade validada. Um milhão de palavras é coberto como cenário experimental, sem compromisso de capacidade de produto.
 - O teste de volume cifra e reabre os cinco textos (25.000 palavras) e as imagens encontradas em `tests/fixtures/imagens/`; quando a pasta está vazia, usa `pixel.png` como fallback sintético. As imagens colocadas nessa pasta são ignoradas pelo Git para evitar versionar arquivos possivelmente pessoais.
-- Última execução com as duas imagens locais (133.863 bytes no total): o teste de um milhão de palavras passou em **4,77 s**; suíte `PYTHONPATH=src .venv/bin/python -m pytest -q -ra tests/test_vault.py` — **14 aprovados, nenhum ignorado, em 15,36 s**. A bateria gera as 200 notas em memória, cifra e reabre com PyNaCl real e compara o documento e os anexos. Isso valida essa amostra sintética, não o cenário hipotético de 5 milhões de palavras.
+- Última execução com as duas imagens locais (133.863 bytes no total): o teste focado de um milhão passou em **4,88 s**; a suíte completa passou com **14 aprovados e nenhum ignorado em 15,36 s** numa execução anterior. A bateria gera as 200 notas em memória, cifra e reabre com PyNaCl real e compara o documento e os anexos. Isso valida essa amostra sintética, não o cenário hipotético de 5 milhões de palavras.
 - `compileall` passou em execução anterior; repetir após mudanças relevantes. `git diff --check` também deve ser repetido antes do commit.
 - A leitura acumula plaintext em memória até autenticar o stream completo, sob limites provisórios CPV1. A medição anterior de 28,3 MB em `tracemalloc` não inclui memória nativa ou o runtime.
-- O teste de um milhão de palavras usa manifesto de até 8 MiB; os limites gerais permanecem 10 MiB para plaintext e 14 MiB para o arquivo, com até 8 MiB agregados de anexos. A medição passou com as duas imagens locais atuais, mas não mede pico de memória nem desempenho no Mac arm64. O cenário de 40 MB continua fora do escopo.
+- O teste de um milhão de palavras usa manifesto de até 8 MiB; os limites gerais permanecem 10 MiB para plaintext e 14 MiB para o arquivo, com até 8 MiB agregados de anexos. A medição foi feita com `/usr/bin/time -l env PYTHONPATH=src .venv/bin/python -m pytest -q -ra tests/test_vault.py::test_crypto_backend_roundtrips_one_million_words` em macOS arm64/Python 3.13.7: pico residente do processo de **382.189.568 bytes (~364 MiB)** e `peak memory footprint` de **369.525.480 bytes (~352 MiB)**. Inclui Python, pytest, PyNaCl/libsodium e os dados do teste; não é perfil isolado do `.app`. O cenário de 40 MB continua fora do escopo.
 - Ainda não há benchmark Argon2id no Mac arm64 nem build `.app`.
 
 ## Pendências sinalizadas após o teste de um milhão
 
-- [ ] Medir o pico de memória durante a criação e a abertura do cofre de um milhão de palavras.
+- [x] Medir o pico de memória durante a criação e a abertura do cofre de um milhão de palavras neste ambiente; repetir com o `.app` empacotado quando ele existir.
 - [ ] Testar salvamento real de alterações e reabertura do arquivo salvo.
 - [ ] Testar troca de senha real: senha nova abre o cofre e senha antiga é rejeitada.
 - [ ] Testar adulteração de ciphertext/cabeçalho, truncamento, ausência do marcador final e bytes extras em arquivos cifrados reais.
