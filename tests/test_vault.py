@@ -236,6 +236,35 @@ def test_crypto_backend_roundtrip_and_authentication(tmp_path):
     session.close()
 
 
+def test_crypto_backend_saves_changes_and_reopens_file(tmp_path):
+    """Persiste texto alterado e preserva imagem e metadados após fechar a sessão."""
+    from caderno.vault.api import create_vault, open_vault
+
+    original = fixture_snapshot()
+    target = tmp_path / "saved.cpv"
+    session = create_vault(target, "senha de teste", original)
+
+    updated_document = original.document
+    updated_document["entries"][0]["body_markdown"] += " Alteração persistida na revisão dois."
+    original_image = original.attachments[0]
+    updated_image = VaultAttachment(
+        original_image.id,
+        "pixel-atualizado.png",
+        original_image.media_type,
+        original_image.data,
+    )
+    updated = VaultSnapshot(updated_document, [updated_image])
+
+    session.save(updated)
+    assert session.snapshot == updated
+    session.close()
+
+    reopened = open_vault(target, "senha de teste")
+    assert reopened.snapshot.document == updated.document
+    assert reopened.snapshot.attachments == updated.attachments
+    reopened.close()
+
+
 def test_crypto_backend_roundtrips_volume_fixture_and_images(tmp_path):
     """Usa PyNaCl real para cifrar e reabrir as notas longas e as imagens da fixture."""
     from caderno.vault.api import create_vault, open_vault

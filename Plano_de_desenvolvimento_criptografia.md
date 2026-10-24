@@ -51,7 +51,8 @@ Comprovar, antes de integrar a interface, que a fixture sintética de dois texto
 ### 3. Fechar criação, salvamento e troca de senha
 
 - [ ] Testar `create_vault` sem sobrescrever arquivo existente e com permissões restritas.
-- [ ] Testar `save`/reabertura, troca de senha, senha antiga rejeitada e senha nova aceita.
+- [x] Testar `save`/reabertura com backend real: editar texto e metadado de imagem, salvar, fechar e comparar texto e bytes da imagem após reabrir.
+- [ ] Testar troca de senha, senha antiga rejeitada e senha nova aceita.
 - [ ] Simular falhas antes da substituição atômica e confirmar que o arquivo anterior e o snapshot da sessão permanecem coerentes.
 - [ ] Testar sessão fechada, conflito de sessão obsoleta e falha de `fsync` do diretório após substituição.
 - [ ] Confirmar que senha, chave e plaintext não aparecem em arquivo temporário, logs ou preferências.
@@ -99,7 +100,7 @@ Comprovar, antes de integrar a interface, que a fixture sintética de dois texto
 ## Pendências sinalizadas após o teste de um milhão
 
 - [x] Medir o pico de memória durante a criação e a abertura do cofre de um milhão de palavras neste ambiente; repetir com o `.app` empacotado quando ele existir.
-- [ ] Testar salvamento real de alterações e reabertura do arquivo salvo.
+- [x] Testar salvamento real de alterações e reabertura do arquivo salvo; revisão cética sem achados bloqueadores.
 - [ ] Testar troca de senha real: senha nova abre o cofre e senha antiga é rejeitada.
 - [ ] Testar adulteração de ciphertext/cabeçalho, truncamento, ausência do marcador final e bytes extras em arquivos cifrados reais.
 - [ ] Validar o benchmark Argon2id e o `.app` no Mac arm64.
