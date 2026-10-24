@@ -33,7 +33,7 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 - [x] Definir a versão mínima como macOS 14 Sonoma.
 - [ ] Definir e validar o empacotamento de um `.app` `arm64`.
 - [x] Usar um runtime Python com Tcl/Tk 8.6 incluído; não depender do Tcl/Tk antigo fornecido pelo sistema.
-- [ ] Fazer um protótipo curto da interface Tkinter antes de migrar as funções.
+- [x] Fazer um protótipo curto da interface Tkinter antes de migrar as funções.
 - [x] Definir o fluxo de abertura e seleção de bases descrito abaixo.
 - [ ] Validar o empacotamento portátil do aplicativo `.app` para uso próprio em computador ou pendrive.
 
@@ -49,27 +49,12 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 
 ### 2. Projetar o arquivo criptografado
 
-- [ ] Definir um formato versionado para o arquivo, com cabeçalho e payload cifrado.
-- [x] Escolher algoritmos e parâmetros iniciais: Argon2id (64 MiB, 3 passagens, 4 lanes) e AES-256-GCM (nonce de 12 bytes, tag de 16 bytes); validar desempenho e formato antes de congelar a versão.
-- [ ] Incluir textos, coleções, hashtags, datas, favoritos e imagens no payload cifrado.
-- [ ] Definir troca de senha, validação de integridade e comportamento para arquivo inválido.
-- [ ] Definir gravação atômica, cópias de segurança e migração de versões do formato.
-- [ ] Registrar que uma senha perdida não permite recuperar o conteúdo.
-
-#### Proposta inicial de segurança (a validar)
-
-- Derivar uma chave de 256 bits com Argon2id e salt aleatório de 16 bytes.
-- Usar Argon2id com memória de 64 MiB, 3 passagens e 4 lanes, conforme a segunda recomendação do RFC 9106. Medir o tempo de desbloqueio no Mac alvo antes de fixar a versão do formato.
-- Criptografar o payload com AES-256-GCM, nonce aleatório novo de 12 bytes por gravação e tag de autenticação de 16 bytes.
-- Guardar no cabeçalho do arquivo o identificador/versão do formato, algoritmo, salt, nonce e parâmetros do Argon2id. Autenticar os bytes exatos do cabeçalho como dados associados do AES-GCM.
-- Validar os limites do cabeçalho antes de executar Argon2id, para que um arquivo malformado não consiga solicitar uso arbitrário de memória ou CPU.
-- Cifrar o payload completo: textos, imagens, coleções, etiquetas, datas e demais metadados. O cabeçalho expõe apenas o necessário para abrir e validar o cofre.
-- Na criação do cofre, oferecer uma senha gerada aleatoriamente (por exemplo, oito palavras escolhidas independentemente com `secrets` a partir de uma lista de pelo menos 7.776 palavras) e recomendar guardá-la em um gerenciador de senhas. A aleatoriedade deve vir do gerador, não da escolha manual das palavras.
-- Não guardar senha nem chave derivada no arquivo. Manter a chave somente durante a sessão e recriptografar o arquivo com nonce novo a cada salvamento.
-- Gravar primeiro um arquivo temporário criptografado no mesmo diretório e substituir o cofre de forma atômica, preservando a cópia anterior se a gravação falhar.
-- Mensagem para a pessoa usuária: senha esquecida significa perda irrecuperável dos dados; não haverá recuperação por suporte.
-
-Essa proposta protege o arquivo contra leitura e adulteração sem a senha, assumindo que o dispositivo e o aplicativo estejam íntegros quando o cofre for aberto. Nenhuma criptografia torna uma senha fraca impossível de adivinhar; um atacante com uma cópia do arquivo pode fazer tentativas offline sem limite de login. A senha gerada com alta aleatoriedade e o custo de memória do Argon2id são, portanto, partes essenciais da proteção.
+- [x] Definir formato versionado, KDF, cifra autenticada, serialização e limites iniciais — ver [`Decisao_de_arquitetura_cofre.md`](Decisao_de_arquitetura_cofre.md).
+- [x] Implementar um núcleo de cofre isolado da interface — protótipo em `src/caderno/vault/`.
+- [ ] Validar o backend criptográfico real, medir Argon2id no Mac arm64 e validar o empacotamento `.app` antes de usar dados reais.
+- [ ] Integrar o cofre com textos, coleções, hashtags, datas, favoritos e imagens.
+- [ ] Planejar backup e migração de versões do formato.
+- [ ] Comunicar claramente que uma senha perdida não permite recuperar o conteúdo.
 
 ### 3. Implementar o núcleo do aplicativo
 
@@ -139,6 +124,8 @@ Legenda: ██ trabalho previsto; .. sem atividade prevista.
 
 ## Acompanhamento
 
-- **Estado atual:** primeira versão restrita a Apple Silicon (`arm64`), macOS 14 Sonoma ou posterior, Tkinter e distribuição inicial para uso próprio/testes. Perfil Argon2id escolhido: 64 MiB, 3 passagens e 4 lanes.
-- **Próximo marco:** validar o compilador/runtime Python e um protótipo simples de interface Tkinter no Mac arm64. Em seguida, medir o tempo do Argon2id, fechar o formato do cofre e validar o fluxo de abertura da última base.
-- **Atualizado em:** 2026-10-23.
+- **Estado atual:** primeira versão restrita a Apple Silicon (`arm64`), macOS 14 Sonoma ou posterior, Tkinter e distribuição inicial para uso próprio/testes.
+- **Estado do protótipo:** a primeira janela visual Tkinter está implementada em `src/caderno/ui.py`; os controles ainda são apenas visuais.
+- **Estado do cofre:** CPV1 está implementado como protótipo isolado; a validação do backend real e do pacote `.app` continua pendente. Consulte [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
+- **Próximo marco:** validar PyNaCl/libsodium e o perfil Argon2id no Mac arm64 suportado; depois integrar a camada à aplicação.
+- **Atualizado em:** 2026-10-24.
