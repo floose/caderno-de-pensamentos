@@ -18,7 +18,8 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 ## Decisões pendentes
 
 - [x] Escolher o toolkit da interface gráfica: Tkinter.
-- [ ] Validar o formato criptográfico proposto abaixo e medir o desempenho no Mac alvo.
+- [x] Selecionar o formato CPV1 e a biblioteca PyNaCl/libsodium; ver [`Decisao_de_arquitetura_cofre.md`](Decisao_de_arquitetura_cofre.md).
+- [ ] Medir Argon2id isoladamente no Mac alvo e validar o perfil no `.app` arm64.
 - [x] Definir a distribuição inicial para uso próprio/testes; assinatura e notarização Apple ficam fora do escopo inicial.
 - [x] Definir macOS 14 Sonoma como versão mínima do sistema.
 - [x] Verificar que Tkinter, `_tkinter`, Tcl e Tk estão disponíveis no runtime Python.org usado pelo projeto.
@@ -51,7 +52,8 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 
 - [x] Definir formato versionado, KDF, cifra autenticada, serialização e limites iniciais — ver [`Decisao_de_arquitetura_cofre.md`](Decisao_de_arquitetura_cofre.md).
 - [x] Implementar um núcleo de cofre isolado da interface — protótipo em `src/caderno/vault/`.
-- [ ] Validar o backend criptográfico real, medir Argon2id no Mac arm64 e validar o empacotamento `.app` antes de usar dados reais.
+- [x] Exercitar o backend PyNaCl real com fixtures sintéticas, inclusive um milhão de palavras e imagens.
+- [ ] Testar corrupção e salvamento/troca de senha no fluxo criptográfico real; medir Argon2id isoladamente e validar o `.app` arm64 antes de usar dados reais.
 - [ ] Integrar o cofre com textos, coleções, hashtags, datas, favoritos e imagens.
 - [ ] Planejar backup e migração de versões do formato.
 - [ ] Comunicar claramente que uma senha perdida não permite recuperar o conteúdo.
@@ -126,6 +128,6 @@ Legenda: ██ trabalho previsto; .. sem atividade prevista.
 
 - **Estado atual:** primeira versão restrita a Apple Silicon (`arm64`), macOS 14 Sonoma ou posterior, Tkinter e distribuição inicial para uso próprio/testes.
 - **Estado do protótipo:** a primeira janela visual Tkinter está implementada em `src/caderno/ui.py`; os controles ainda são apenas visuais.
-- **Estado do cofre:** CPV1 está implementado como protótipo isolado; a validação do backend real e do pacote `.app` continua pendente. Consulte [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
-- **Próximo marco:** validar PyNaCl/libsodium e o perfil Argon2id no Mac arm64 suportado; depois integrar a camada à aplicação.
+- **Estado do cofre:** CPV1 está implementado como protótipo isolado; o backend real passou com fixtures sintéticas. Testes de estados de falha/persistência e validação do `.app` continuam pendentes. Consulte [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
+- **Próximo marco:** completar testes reais de adulteração, salvamento e troca de senha; medir Argon2id isoladamente e validar o `.app` arm64 antes da integração visual.
 - **Atualizado em:** 2026-10-24.

@@ -1,7 +1,7 @@
 # Plano de desenvolvimento do banco criptografado
 
 **Branch:** `feature/vault-encryption`
-**Estado:** protótipo CPV1 implementado; o backend criptográfico real ainda não foi validado.
+**Estado:** protótipo CPV1 implementado; o backend real passou em round-trip com fixtures sintéticas, mas ainda não está pronto para dados pessoais.
 
 Este é o roteiro de execução para o agente desenvolvedor e o agente cético. A especificação técnica única está em [`Decisao_de_arquitetura_cofre.md`](Decisao_de_arquitetura_cofre.md). O plano cobre o armazenamento local de textos e imagens e a função que protege o arquivo inteiro com senha.
 
@@ -11,7 +11,7 @@ O programa já tem código que organiza textos e imagens num arquivo e tenta pro
 
 Isso ainda é um protótipo: PyNaCl 1.6.2 está instalado no ambiente do projeto e o fluxo real passou com textos e imagens sintéticos, inclusive uma amostra de um milhão de palavras. Não testamos um arquivo de 40 MB; esse foi apenas um cenário hipotético, não um requisito. O aplicativo Mac também não foi validado. Enquanto o caderno estiver aberto, o conteúdo e a chave precisam existir na memória do programa.
 
-**O que falta agora:** continuar os testes com dados sintéticos, medir o desempenho e a memória em volumes relevantes para o uso esperado e conferir a biblioteca no aplicativo Mac. O agente desenvolvedor implementa esses passos e o agente cético procura falhas.
+**O que falta agora:** completar testes de falha e persistência, medir Argon2id isoladamente e validar o aplicativo Mac. O pico do processo de teste para um milhão de palavras já foi medido; a validação equivalente no `.app` ainda falta. O agente desenvolvedor implementa esses passos e o agente cético procura falhas.
 
 ## Objetivo da primeira entrega
 
@@ -29,13 +29,15 @@ Comprovar, antes de integrar a interface, que a fixture sintética de dois texto
 
 ### 1. Validar o caminho criptográfico real
 
-- [ ] Disponibilizar PyNaCl 1.6.2/libsodium no ambiente autorizado e confirmar que Argon2id e `secretstream` usados pelo código estão presentes.
-- [ ] Executar um round-trip real da fixture: criar arquivo, fechar sessão, abrir e comparar documento e bytes da imagem.
-- [ ] Confirmar que o arquivo cifrado não contém título, texto, nome de imagem nem sequência Base64 da fixture.
-- [ ] Testar senha errada, alteração de ciphertext, truncamento, remoção de frame final e bytes extras após o final.
-- [ ] Medir tempo e pico de memória do perfil Argon2id CPV1 no Mac arm64 alvo; registrar hardware/versão de runtime sem incluir identificadores pessoais da máquina.
+- [x] Disponibilizar PyNaCl 1.6.2/libsodium no ambiente e confirmar as APIs por meio dos testes criptográficos reais.
+- [x] Executar round-trip real das fixtures: criar e abrir o arquivo e comparar documento e bytes das imagens.
+- [x] Conferir ausência de títulos, corpos, nomes de imagens e prefixos de bytes das imagens no ciphertext.
+- [x] Testar rejeição de senha errada.
+- [ ] Testar alteração de ciphertext/cabeçalho, truncamento, remoção do frame final e bytes extras em arquivos reais.
+- [x] Medir o pico de memória do processo no cenário de um milhão de palavras em Mac arm64.
+- [ ] Medir tempo e memória do Argon2id isoladamente no runtime alvo; validar novamente no `.app`.
 
-**Saída da etapa:** teste criptográfico deixa de ser ignorado; perfil tem medição repetível. Se PyNaCl exigir instalação fora das permissões disponíveis, parar apenas essa etapa e pedir autorização, sem contornar a restrição.
+**Saída da etapa:** alcançada para round-trip e pico do processo com fixture sintética. O benchmark isolado de Argon2id e os testes de falhas de arquivo continuam pendentes.
 
 ### 2. Fechar o contrato dos dados
 
@@ -88,11 +90,11 @@ Comprovar, antes de integrar a interface, que a fixture sintética de dois texto
 - `tests/fixtures/pixel.png` continua sendo uma imagem sintética pequena para os testes automatizados existentes.
 - O cenário hipotético de 40 MB excede os limites implementados; não é requisito atual nem capacidade validada. Um milhão de palavras é coberto como cenário experimental, sem compromisso de capacidade de produto.
 - O teste de volume cifra e reabre os cinco textos (25.000 palavras) e as imagens encontradas em `tests/fixtures/imagens/`; quando a pasta está vazia, usa `pixel.png` como fallback sintético. As imagens colocadas nessa pasta são ignoradas pelo Git para evitar versionar arquivos possivelmente pessoais.
-- Última execução com as duas imagens locais (133.863 bytes no total): o teste focado de um milhão passou em **4,88 s**; a suíte completa passou com **14 aprovados e nenhum ignorado em 15,36 s** numa execução anterior. A bateria gera as 200 notas em memória, cifra e reabre com PyNaCl real e compara o documento e os anexos. Isso valida essa amostra sintética, não o cenário hipotético de 5 milhões de palavras.
-- `compileall` passou em execução anterior; repetir após mudanças relevantes. `git diff --check` também deve ser repetido antes do commit.
-- A leitura acumula plaintext em memória até autenticar o stream completo, sob limites provisórios CPV1. A medição anterior de 28,3 MB em `tracemalloc` não inclui memória nativa ou o runtime.
+- Última execução com as duas imagens locais (133.863 bytes no total): o teste focado de um milhão passou em **4,88 s**; a suíte completa passou com **14 aprovados e nenhum ignorado em 15,36 s**. A bateria gera as 200 notas em memória, cifra e reabre com PyNaCl real e compara o documento e os anexos. Isso valida essa amostra sintética, não o cenário hipotético de 5 milhões de palavras.
+- `compileall` passou em execução anterior; repetir após mudanças relevantes. `git diff --check` passou após o registro da medição.
+- A leitura acumula plaintext em memória até autenticar o stream completo, sob limites provisórios CPV1.
 - O teste de um milhão de palavras usa manifesto de até 8 MiB; os limites gerais permanecem 10 MiB para plaintext e 14 MiB para o arquivo, com até 8 MiB agregados de anexos. A medição foi feita com `/usr/bin/time -l env PYTHONPATH=src .venv/bin/python -m pytest -q -ra tests/test_vault.py::test_crypto_backend_roundtrips_one_million_words` em macOS arm64/Python 3.13.7: pico residente do processo de **382.189.568 bytes (~364 MiB)** e `peak memory footprint` de **369.525.480 bytes (~352 MiB)**. Inclui Python, pytest, PyNaCl/libsodium e os dados do teste; não é perfil isolado do `.app`. O cenário de 40 MB continua fora do escopo.
-- Ainda não há benchmark Argon2id no Mac arm64 nem build `.app`.
+- Ainda não há benchmark isolado de Argon2id nem build `.app`.
 
 ## Pendências sinalizadas após o teste de um milhão
 
