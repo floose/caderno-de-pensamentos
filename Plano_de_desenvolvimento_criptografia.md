@@ -5,6 +5,14 @@
 
 Este é o roteiro de execução para o agente desenvolvedor e o agente cético. A especificação técnica única está em [`Decisao_de_arquitetura_cofre.md`](Decisao_de_arquitetura_cofre.md). O plano cobre o armazenamento local de textos e imagens e a função que protege o arquivo inteiro com senha.
 
+## Resumo em linguagem simples
+
+O programa já tem código que organiza textos e imagens num arquivo e tenta protegê-los com senha. A senha é usada para criar uma chave; uma biblioteca pronta cifra o conteúdo e também detecta alterações no arquivo. A interface ainda não usa esse recurso.
+
+Isso ainda é um protótipo: PyNaCl 1.6.2 está instalado no ambiente do projeto e o fluxo real passou com textos e imagens sintéticos, inclusive uma amostra de um milhão de palavras. Não testamos um arquivo de 40 MB; esse foi apenas um cenário hipotético, não um requisito. O aplicativo Mac também não foi validado. Enquanto o caderno estiver aberto, o conteúdo e a chave precisam existir na memória do programa.
+
+**O que falta agora:** continuar os testes com dados sintéticos, medir o desempenho e a memória em volumes relevantes para o uso esperado e conferir a biblioteca no aplicativo Mac. O agente desenvolvedor implementa esses passos e o agente cético procura falhas.
+
 ## Objetivo da primeira entrega
 
 Comprovar, antes de integrar a interface, que a fixture sintética de dois textos e uma imagem pode ser criada, aberta, editada, salva e reaberta como um único arquivo criptografado. Senha errada, adulteração, truncamento e falha de gravação devem falhar sem entregar conteúdo parcial nem destruir uma versão válida.
@@ -76,7 +84,22 @@ Comprovar, antes de integrar a interface, que a fixture sintética de dois texto
 ## Estado de partida
 
 - A fachada em `src/caderno/vault/` já oferece `create_vault(path, password, snapshot)`, `open_vault(path, password)` e `VaultSession` com `snapshot`, `save`, `change_password` e `close`.
-- O schema ilustrativo está em `tests/fixtures/cofre_exemplo.json` e contém duas notas sintéticas; `tests/fixtures/pixel.png` é uma imagem sintética.
-- O codec e a persistência existem, mas o último registro é **11 testes aprovados e 1 ignorado** porque PyNaCl não estava instalado. `compileall` e `git diff --check` passaram naquele registro; repetir após mudanças.
+- `tests/fixtures/cofre_exemplo.json` contém duas notas sintéticas para testes rápidos; `tests/fixtures/cofre_volume.json` contém cinco textos sintéticos de 5.000 palavras cada para teste de volume. A pasta `tests/fixtures/imagens/` recebe imagens de teste fornecidas pela pessoa responsável.
+- `tests/fixtures/pixel.png` continua sendo uma imagem sintética pequena para os testes automatizados existentes.
+- O cenário hipotético de 40 MB excede os limites implementados; não é requisito atual nem capacidade validada. Um milhão de palavras é coberto como cenário experimental, sem compromisso de capacidade de produto.
+- O teste de volume cifra e reabre os cinco textos (25.000 palavras) e as imagens encontradas em `tests/fixtures/imagens/`; quando a pasta está vazia, usa `pixel.png` como fallback sintético. As imagens colocadas nessa pasta são ignoradas pelo Git para evitar versionar arquivos possivelmente pessoais.
+- Última execução com as duas imagens locais (133.863 bytes no total): o teste de um milhão de palavras passou em **4,77 s**; suíte `PYTHONPATH=src .venv/bin/python -m pytest -q -ra tests/test_vault.py` — **14 aprovados, nenhum ignorado, em 15,36 s**. A bateria gera as 200 notas em memória, cifra e reabre com PyNaCl real e compara o documento e os anexos. Isso valida essa amostra sintética, não o cenário hipotético de 5 milhões de palavras.
+- `compileall` passou em execução anterior; repetir após mudanças relevantes. `git diff --check` também deve ser repetido antes do commit.
 - A leitura acumula plaintext em memória até autenticar o stream completo, sob limites provisórios CPV1. A medição anterior de 28,3 MB em `tracemalloc` não inclui memória nativa ou o runtime.
-- Ainda não há validação do backend criptográfico real, benchmark Argon2id no Mac arm64, nem build `.app`. Não usar dados reais antes de concluir os marcos 1–4.
+- O teste de um milhão de palavras usa manifesto de até 8 MiB; os limites gerais permanecem 10 MiB para plaintext e 14 MiB para o arquivo, com até 8 MiB agregados de anexos. A medição passou com as duas imagens locais atuais, mas não mede pico de memória nem desempenho no Mac arm64. O cenário de 40 MB continua fora do escopo.
+- Ainda não há benchmark Argon2id no Mac arm64 nem build `.app`.
+
+## Pendências sinalizadas após o teste de um milhão
+
+- [ ] Medir o pico de memória durante a criação e a abertura do cofre de um milhão de palavras.
+- [ ] Testar salvamento real de alterações e reabertura do arquivo salvo.
+- [ ] Testar troca de senha real: senha nova abre o cofre e senha antiga é rejeitada.
+- [ ] Testar adulteração de ciphertext/cabeçalho, truncamento, ausência do marcador final e bytes extras em arquivos cifrados reais.
+- [ ] Validar o benchmark Argon2id e o `.app` no Mac arm64.
+
+Não usar dados pessoais até essas pendências serem resolvidas e revisadas pelo agente cético.

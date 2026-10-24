@@ -10,6 +10,12 @@ OpenPGP v6 foi considerado por ser um padrão interoperável com Argon2 e AEAD e
 
 O módulo não implementa cifra, KDF, nonce ou MAC próprios. CPV1 define somente enquadramento, IDs, serialização e limites do formato da aplicação.
 
+## JSON e cenário de capacidade avaliado
+
+JSON é a serialização escolhida para o protótipo porque facilita validar o schema e separar os dados do código da interface. O JSON e os anexos ficam dentro do fluxo cifrado; JSON não é gravado em claro como arquivo de banco.
+
+A pergunta sobre 5 milhões de palavras (estimativa de cerca de 40 MB de texto sintético) foi exploratória, não é um requisito do produto. A primitiva `secretstream` processa dados em blocos, mas **a implementação atual rejeita arquivos dessa dimensão**: os limites CPV1 abaixo são menores, o leitor acumula o conteúdo em memória e cada salvamento regrava o arquivo completo. Não aumentar os limites por causa desse cenário hipotético; se esse porte virar uma necessidade real, medir tamanho, tempo e pico de memória no Mac alvo antes de decidir.
+
 ## Perfil KDF
 
 - Argon2id v1.3 (libsodium `ALG_ARGON2ID13`).
@@ -44,13 +50,13 @@ frame := ciphertext_length:u32be || secretstream_ciphertext
 
 Cada mensagem carrega no máximo 65.536 bytes plaintext; o comprimento cifrado não pode exceder `65.536 + crypto_secretstream_xchacha20poly1305_ABYTES`. Todas as mensagens de dados usam `TAG_MESSAGE`. O escritor emite uma última mensagem vazia com `TAG_FINAL`. O leitor rejeita EOF antes de `TAG_FINAL`, qualquer tag diferente de `TAG_MESSAGE` antes do final, um segundo final, framing malformado e qualquer byte depois do frame final. A sequência secretstream autentica a ordem; trocar ou repetir frames causa falha de autenticação.
 
-Limites provisórios de protótipo: arquivo cifrado até 14 MiB, plaintext até 10 MiB, manifesto até 1 MiB, até 256 anexos, cada anexo até 8 MiB e agregado até 8 MiB. São deliberadamente baixos para uma base de textos e imagens e não são requisitos finais de produto. O documento tem até 100 mil valores e profundidade 64. O parser só publica snapshot depois da tag final e EOF, mas acumula plaintext para autenticar antes de interpretar. Medição sintética no Mac arm64 disponível (manifesto próximo de 1 MiB e anexo de 8 MiB) observou pico Python de 28.3 MB via `tracemalloc`; isso não conta buffers nativos do libsodium nem memória de runtime e não é garantia universal. Limites finais requerem parser incremental e medição com imagens representativas.
+Limites provisórios de protótipo: arquivo cifrado até 14 MiB, plaintext até 10 MiB, manifesto até 8 MiB, até 256 anexos, cada anexo até 8 MiB e agregado até 8 MiB. São limites para testes e não requisitos finais de produto. O documento tem até 100 mil valores e profundidade 64. O parser só publica snapshot depois da tag final e EOF, mas acumula plaintext para autenticar antes de interpretar. A bateria de um milhão de palavras deve medir o uso de memória neste ambiente; qualquer medição precisa indicar que `tracemalloc` não conta buffers nativos nem toda a memória do runtime.
 
 ## Registros dentro do fluxo
 
 O conteúdo plaintext do stream é uma sequência de registros binários. Não há plaintext temporário em disco.
 
-1. Manifesto: `type:u8(0x01) || length:u32be || json_utf8`. O manifesto tem `schema_version: 1`, coleções, textos, datas UTC, hashtags e descritores de anexos. Cada texto referencia anexos por ID. Limite provisório de 1 MiB; conteúdo binário de imagens até 8 MiB agregado.
+1. Manifesto: `type:u8(0x01) || length:u32be || json_utf8`. O manifesto tem `schema_version: 1`, coleções, textos, datas UTC, hashtags e descritores de anexos. Cada texto referencia anexos por ID. Limite provisório de 8 MiB; conteúdo binário de imagens até 8 MiB agregado.
 2. Um registro para cada anexo, na ordem do manifesto: `type:u8(0x02) || id_length:u16be || id:utf8 || data_length:u64be || image_bytes`.
 3. O leitor exige um manifesto único primeiro, exatamente um registro por ID listado, comprimentos válidos e nenhum registro depois do último anexo.
 
