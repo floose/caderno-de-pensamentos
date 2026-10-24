@@ -9,6 +9,7 @@ Antes de alterar o projeto, leia [`MEMORIA_DO_PROJETO.md`](MEMORIA_DO_PROJETO.md
 - Não implemente código sem solicitação explícita; quando solicitado, conclua a tarefa e informe arquivos alterados e validações feitas.
 - Preserve a privacidade: não adicione caminhos pessoais, nomes, localização, segredos, dados reais ou informações da máquina ao código, testes e documentação versionada.
 - Prefira soluções pequenas e claras. Mantenha funções com até 50 linhas; divida-as quando necessário.
+- Documente APIs públicas e funções sensíveis com docstrings que expliquem finalidade, entradas/saídas, erros e garantias relevantes. Comente invariantes criptográficas ou de persistência não óbvias; evite comentários linha a linha que apenas repetem o código.
 - Crie testes automatizados para funcionalidades e regressões de bugs.
 - Não altere a interface durante o trabalho do cofre criptográfico, salvo solicitação explícita de integração.
 

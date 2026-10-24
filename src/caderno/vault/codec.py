@@ -28,12 +28,14 @@ HEADER = struct.Struct(">8sHBBBIQ16s24s")
 
 
 def _bindings():
+    """Importa PyNaCl sob demanda para permitir inspecionar o pacote sem backend."""
     from nacl import bindings, pwhash
 
     return bindings, pwhash
 
 
 def _password_bytes(password: str) -> bytes:
+    """Aplica a normalização CPV1 e impõe o limite de bytes antes da KDF."""
     if not isinstance(password, str):
         raise TypeError("A senha deve ser texto")
     encoded = unicodedata.normalize("NFC", password).encode("utf-8")
@@ -43,22 +45,26 @@ def _password_bytes(password: str) -> bytes:
 
 
 def _derive(password: str, salt: bytes) -> bytes:
+    """Deriva a chave CPV1 com perfil Argon2id fixo, nunca controlado pelo arquivo."""
     _, pwhash = _bindings()
     return pwhash.argon2id.kdf(32, _password_bytes(password), salt, opslimit=OPS, memlimit=MEM)
 
 
 def _validate_file_size(size: int):
+    """Rejeita arquivos fora dos limites globais antes de carregar o backend/KDF."""
     minimum = HEADER.size + 4 + STREAM_ABYTES
     if size < minimum or size > MAX_FILE:
         raise InvalidVaultError("Tamanho de arquivo CPV1 inválido")
 
 
 def new_key(password: str) -> tuple[bytes, bytes]:
+    """Gera salt aleatório e deriva a chave para uma nova gravação de cofre."""
     salt = os.urandom(SALT_BYTES)
     return salt, _derive(password, salt)
 
 
 def _manifest(snapshot: VaultSnapshot) -> bytes:
+    """Serializa documento e descritores; dados binários ficam em registros próprios."""
     attachments = []
     total = 0
     for item in snapshot.attachments:
@@ -77,6 +83,7 @@ def _manifest(snapshot: VaultSnapshot) -> bytes:
 
 
 def _records(snapshot: VaultSnapshot):
+    """Produz manifesto primeiro e registros binários de anexos na ordem declarada."""
     manifest = _manifest(snapshot)
     yield b"\x01" + struct.pack(">I", len(manifest)) + manifest
     for attachment in snapshot.attachments:
@@ -89,6 +96,7 @@ def _records(snapshot: VaultSnapshot):
 
 
 def _header(salt: bytes, key: bytes):
+    """Inicializa secretstream e monta o cabeçalho CPV1 usado como AAD."""
     bindings, _ = _bindings()
     state = bindings.crypto_secretstream_xchacha20poly1305_state()
     stream_header = bindings.crypto_secretstream_xchacha20poly1305_init_push(state, key)
@@ -97,6 +105,7 @@ def _header(salt: bytes, key: bytes):
 
 
 def _write_frame(output, state, plaintext: bytes, aad: bytes, tag: int):
+    """Autentica e grava um frame, respeitando o limite total do arquivo."""
     bindings, _ = _bindings()
     cipher = bindings.crypto_secretstream_xchacha20poly1305_push(state, plaintext, aad, tag)
     if output.tell() + 4 + len(cipher) > MAX_FILE:
@@ -106,6 +115,7 @@ def _write_frame(output, state, plaintext: bytes, aad: bytes, tag: int):
 
 
 def encrypt_file(output, snapshot: VaultSnapshot, salt: bytes, key: bytes):
+    """Cifra registros em frames e encerra com TAG_FINAL; não fecha o stream."""
     bindings, _ = _bindings()
     aad, _, state = _header(salt, key)
     tag_message = bindings.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE
@@ -125,6 +135,7 @@ def encrypt_file(output, snapshot: VaultSnapshot, salt: bytes, key: bytes):
 
 
 def _read_header(source):
+    """Valida todos os IDs e o perfil permitido antes de executar Argon2id."""
     raw = source.read(HEADER.size)
     if len(raw) != HEADER.size:
         raise InvalidVaultError("Arquivo de cofre inválido")
@@ -135,6 +146,7 @@ def _read_header(source):
 
 
 def _read_cipher_frame(source, file_size: int) -> bytes:
+    """Lê um frame limitado pelo tamanho restante e pelo máximo do protocolo."""
     frame_header = source.read(4)
     if len(frame_header) != 4:
         raise AuthenticationError("Senha incorreta ou arquivo alterado")
@@ -150,11 +162,13 @@ def _read_cipher_frame(source, file_size: int) -> bytes:
 
 
 def _require_eof(source):
+    """Exige EOF logo após TAG_FINAL para rejeitar bytes anexados ao arquivo."""
     if source.read(1):
         raise AuthenticationError("Senha incorreta ou arquivo alterado")
 
 
 def _is_final_frame(message: bytes, tag: int, tag_message: int, tag_final: int) -> bool:
+    """Aceita mensagens de dados ou um marcador final vazio, rejeitando outras tags."""
     if tag == tag_final and not message:
         return True
     if tag == tag_message:
@@ -163,6 +177,7 @@ def _is_final_frame(message: bytes, tag: int, tag_message: int, tag_final: int) 
 
 
 def decrypt_file(path: str, password: str):
+    """Valida, autentica e interpreta o cofre; retorna snapshot, chave e salt."""
     _validate_file_size(os.path.getsize(path))
     bindings, _ = _bindings()
     state = bindings.crypto_secretstream_xchacha20poly1305_state()
@@ -177,6 +192,7 @@ def decrypt_file(path: str, password: str):
 
 
 def _decrypt(path, password, bindings, state, tag_message, tag_final):
+    """Autentica o stream inteiro antes de expor qualquer snapshot ao chamador."""
     size = os.path.getsize(path)
     _validate_file_size(size)
     with open(path, "rb") as source:
@@ -198,6 +214,7 @@ def _decrypt(path, password, bindings, state, tag_message, tag_final):
 
 
 def _parse_plaintext(raw: bytes) -> VaultSnapshot:
+    """Valida framing, manifesto e schema antes de construir o snapshot imutável."""
     if len(raw) < 5 or raw[0] != 1:
         raise InvalidVaultError("Registros CPV1 inválidos")
     manifest_size = struct.unpack_from(">I", raw, 1)[0]
@@ -218,6 +235,7 @@ def _parse_plaintext(raw: bytes) -> VaultSnapshot:
 
 
 def _check_document_bounds(document: dict):
+    """Limita nós e profundidade para conter estruturas JSON patológicas."""
     pending = [(document, 0)]
     nodes = 0
     while pending:
@@ -232,6 +250,7 @@ def _check_document_bounds(document: dict):
 
 
 def _parse_attachments(raw: bytes, pos: int, descriptors: list) -> tuple[VaultAttachment, ...]:
+    """Confere IDs, referências e tamanhos dos anexos contra o manifesto autenticado."""
     expected = {str(item["id"]): item for item in descriptors}
     if len(expected) != len(descriptors):
         raise InvalidVaultError("IDs duplicados no manifesto")

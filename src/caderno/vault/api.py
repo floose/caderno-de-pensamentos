@@ -14,6 +14,7 @@ from .model import ConcurrentModificationError, DurabilityUncertainError, VaultS
 
 
 def _canonical(path) -> Path:
+    """Expande e valida o caminho do cofre contra symlinks e pais inseguros."""
     target = Path(path).expanduser().absolute()
     cursor = target
     while cursor != cursor.parent:
@@ -31,6 +32,7 @@ def _canonical(path) -> Path:
 
 
 def _fingerprint(path: Path) -> bytes:
+    """Calcula o fingerprint usado para detectar gravações externas concorrentes."""
     digest = hashlib.sha256()
     with path.open("rb") as source:
         for block in iter(lambda: source.read(1024 * 1024), b""):
@@ -39,6 +41,7 @@ def _fingerprint(path: Path) -> bytes:
 
 
 def _lock(path: Path):
+    """Adquire lock exclusivo por caminho para serializar escritores cooperantes."""
     lock_dir = Path(tempfile.gettempdir()) / f"caderno-vault-locks-{os.getuid()}"
     try:
         lock_dir.mkdir(mode=0o700)
@@ -60,6 +63,7 @@ def _lock(path: Path):
 
 
 def _write_atomic(path: Path, snapshot: VaultSnapshot, salt: bytes, key: bytes, create: bool):
+    """Grava somente ciphertext em temporário e publica o arquivo atomicamente."""
     if create and path.exists():
         raise FileExistsError(path)
     descriptor, temporary = tempfile.mkstemp(prefix=".cpvault-", dir=path.parent)
@@ -82,6 +86,7 @@ def _write_atomic(path: Path, snapshot: VaultSnapshot, salt: bytes, key: bytes, 
 
 
 def _sync_parent(path: Path):
+    """Sincroniza a entrada do diretório ou sinaliza durabilidade incerta."""
     descriptor = -1
     try:
         descriptor = os.open(path.parent, os.O_RDONLY)
@@ -94,6 +99,8 @@ def _sync_parent(path: Path):
 
 
 class VaultSession:
+    """Sessão desbloqueada; mantém a chave em memória até `close()`."""
+
     def __init__(self, path: Path, salt: bytes, key: bytes, snapshot: VaultSnapshot, fingerprint=None):
         self._path = path
         self._salt = salt
@@ -103,22 +110,27 @@ class VaultSession:
         self._closed = False
 
     def _ensure_open(self):
+        """Impede operações após o encerramento explícito da sessão."""
         if self._closed:
             raise RuntimeError("Sessão fechada")
 
     @property
     def snapshot(self) -> VaultSnapshot:
+        """Retorna o snapshot atual; falha se a sessão estiver fechada."""
         self._ensure_open()
         return self._snapshot
 
     def save(self, snapshot: VaultSnapshot) -> None:
+        """Persiste o snapshot com a chave atual, rejeitando revisões obsoletas."""
         self._store(snapshot, self._salt, self._key)
 
     def change_password(self, new_password: str) -> None:
+        """Recriptografa com salt e chave novos; atualiza a sessão após gravar."""
         salt, key = new_key(new_password)
         self._store(self._snapshot, salt, key)
 
     def _store(self, snapshot: VaultSnapshot, salt: bytes, key: bytes):
+        """Serializa gravações, verifica concorrência e mantém estado pós-falha coerente."""
         self._ensure_open()
         descriptor = _lock(self._path)
         try:
@@ -139,6 +151,7 @@ class VaultSession:
             os.close(descriptor)
 
     def close(self):
+        """Remove referências internas a snapshot, salt e chave da sessão."""
         self._salt = None
         self._key = None
         self._snapshot = None
@@ -146,6 +159,7 @@ class VaultSession:
 
 
 def create_vault(path, password: str, snapshot: VaultSnapshot) -> VaultSession:
+    """Cria um cofre novo sem sobrescrever destino e retorna sessão desbloqueada."""
     target = _canonical(path)
     if not target.parent.is_dir():
         raise FileNotFoundError(target.parent)
@@ -162,6 +176,7 @@ def create_vault(path, password: str, snapshot: VaultSnapshot) -> VaultSession:
 
 
 def open_vault(path, password: str) -> VaultSession:
+    """Autentica e carrega um cofre inteiro antes de retornar uma sessão."""
     target = _canonical(path)
     descriptor = _lock(target)
     try:
