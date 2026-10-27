@@ -25,10 +25,7 @@ class VaultSnapshot:
 
     def __init__(self, document: Mapping[str, Any], attachments=()):
         """Copia entradas mutáveis e valida que o documento pode ser serializado em JSON."""
-        frozen_attachments = tuple(
-            VaultAttachment(str(a.id), str(a.name), str(a.media_type), bytes(a.data))
-            for a in attachments
-        )
+        frozen_attachments = tuple(_freeze_attachment(item) for item in attachments)
         doc_copy = copy.deepcopy(dict(document))
         json.dumps(doc_copy, ensure_ascii=False, allow_nan=False)
         ids = [a.id for a in frozen_attachments]
@@ -42,6 +39,15 @@ class VaultSnapshot:
         """Devolve uma cópia nova para impedir mutação do estado interno."""
         return json.loads(self._document_json)
 
+
+def _freeze_attachment(item) -> VaultAttachment:
+    if not isinstance(item, VaultAttachment):
+        raise TypeError("Anexos precisam ser VaultAttachment")
+    if not all(isinstance(value, str) for value in (item.id, item.name, item.media_type)):
+        raise TypeError("ID, nome e MIME type do anexo precisam ser textos")
+    if not isinstance(item.data, (bytes, bytearray, memoryview)):
+        raise TypeError("Dados do anexo precisam ser bytes ou bytes-like")
+    return VaultAttachment(item.id, item.name, item.media_type, bytes(item.data))
 
 class VaultError(Exception):
     """Base exception for vault operations."""

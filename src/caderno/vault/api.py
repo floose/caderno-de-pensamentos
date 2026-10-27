@@ -126,6 +126,7 @@ class VaultSession:
 
     def change_password(self, new_password: str) -> None:
         """Recriptografa com salt e chave novos; atualiza a sessão após gravar."""
+        self._ensure_open()
         salt, key = new_key(new_password)
         self._store(self._snapshot, salt, key)
 

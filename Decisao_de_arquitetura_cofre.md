@@ -21,7 +21,7 @@ A pergunta sobre 5 milhões de palavras (estimativa de cerca de 40 MB de texto s
 - Argon2id v1.3 (libsodium `ALG_ARGON2ID13`).
 - `opslimit=3`, `memlimit=268435456` bytes, saída de 32 bytes e salt aleatório de 16 bytes.
 - O libsodium MODERATE usa 256 MiB e 3 passagens. Seu wrapper Argon2id usa paralelismo `p=1`; essa propriedade é parte do perfil CPV1. Não se usa `ALG_DEFAULT`, pois o valor pode mudar entre versões da biblioteca.
-- Medir esse perfil com PyNaCl/libsodium no Mac arm64 disponível antes do congelamento final. Os valores de KDF são lidos do cabeçalho, mas qualquer combinação fora da allowlist exata é rejeitada antes de derivar a chave.
+- Medição inicial reproduzível no Mac arm64 disponível: `scripts/benchmark_argon2id.py --samples 5`, CPython 3.13.7/PyNaCl 1.6.2, mediana 2,1086 s (2,0965–2,1296 s). O RSS máximo do processo foi 289.931.264 bytes, com baseline de 21.233.664 bytes; a diferença (~256,2 MiB) aproxima o custo do perfil, mas `ru_maxrss` mede o processo inteiro, não a alocação isolada da KDF. Não altera o perfil nem prova adequação em Macs mais lentos; repetir no `.app` arm64 antes da distribuição. Os valores de KDF são lidos do cabeçalho, mas qualquer combinação fora da allowlist exata é rejeitada antes de derivar a chave.
 - Senha: Unicode NFC, UTF-8, sem remover espaços, máximo de 1.024 bytes após normalização. O aplicativo não persiste senha nem chave.
 
 ## Envelope binário CPV1
@@ -62,6 +62,18 @@ O conteúdo plaintext do stream é uma sequência de registros binários. Não h
 
 O fluxo é cifrado em blocos de no máximo 64 KiB, então uma imagem não é transformada em Base64 nem precisa caber numa única mensagem AEAD. A camada devolve um snapshot somente após autenticar o stream final e validar todos os registros.
 
+## Schema do documento v1
+
+O objeto JSON do caderno usa chaves estritas; propriedades desconhecidas ou ausentes são rejeitadas para `schema_version: 1`. A raiz contém exatamente `schema_version`, `collections`, `attachments` e `entries`. Cada coleção tem exatamente `id` e `name`. Cada entrada tem `id`, `title`, `body_markdown`, `collection_id`, `tags`, `created_at`, `updated_at`, `published_at`, `favorite` e `attachments`. Cada descritor de anexo tem `id`, `entry_id`, `filename` e `media_type`.
+
+IDs são textos não vazios de até 256 caracteres, sem caracteres de controle, únicos globalmente entre coleções, entradas e anexos. Nomes/títulos são textos não vazios de até 4.096 caracteres; corpo Markdown pode ser vazio e tem limite de 8 MiB. `tags` é lista de textos únicos não vazios, cada um até 256 caracteres. `favorite` precisa ser booleano, sem coerção de strings ou inteiros. `created_at` e `updated_at` são datas/hora ISO 8601 com fuso UTC (`Z` ou `+00:00`); `published_at` aceita a mesma forma ou `null` para rascunho.
+
+`collection_id` referencia uma coleção existente. Cada ID em `entry.attachments` corresponde exatamente a um descritor cujo `entry_id` seja aquela entrada; não pode haver descritor ou referência extra. Cada descritor corresponde a um registro binário único, e `filename`/`media_type` coincidem com os metadados do objeto binário. O filename é simples, sem separadores de diretório; MIME type precisa ser `image/*`. O documento fica limitado a 100 mil valores e profundidade 64; há até 10 mil coleções, 100 mil entradas e 256 anexos, além dos limites de bytes CPV1.
+
+As fixtures `cofre_exemplo.json` e `cofre_volume.json` são compatíveis sem migração: ambas usam schema v1, datas UTC e o conjunto de chaves definido acima. A fixture curta associa `pixel.png`; a de volume pode ter anexos adicionados pelo teste. `VaultSnapshot` pode ser construído em memória, mas criação/salvamento validam schema antes de persistir e leitura valida schema depois de autenticar o stream, antes de devolver qualquer snapshot. O construtor não converte `id`, `name` ou `media_type` para texto: esses campos precisam já ser `str`. `data` precisa ser `bytes`, `bytearray` ou `memoryview`; os dois últimos são copiados para bytes imutáveis. Tipos inválidos levantam `TypeError`.
+
+O validador conta prospectivamente até 100 mil valores antes de enfileirar filhos de um objeto/lista e rejeita profundidade maior que 64. Assim, a própria fila de validação também permanece limitada; o limite não é aplicado depois de expandir uma lista larga.
+
 ## API de integração e snapshots
 
 O pacote `caderno.vault` não importa Tkinter nem `caderno.ui`; não exibe diálogos nem guarda estado global da interface. A fachada expõe:
@@ -74,6 +86,8 @@ O pacote `caderno.vault` não importa Tkinter nem `caderno.ui`; não exibe diál
 - `session.close() -> None`
 
 `VaultSnapshot` é imutável: a fábrica serializa uma cópia do documento JSON e guarda anexos em tuple de objetos frozen, com bytes imutáveis. Alterar dicts/listas usados na criação não altera o snapshot; acessar o documento retorna uma cópia nova. O manifesto contém metadados dos anexos; `VaultAttachment` fornece ID, nome, MIME type e bytes binários.
+
+`open_vault` pode levantar `AuthenticationError` para senha incorreta, falha de autenticação, truncamento ou dados depois do frame final. `InvalidVaultError` é usado para envelope/perfil inválido antes da KDF, limites estruturais excedidos e manifesto/registros inválidos encontrados depois da autenticação. Como esse segundo grupo pode ser detectado após o stream ter sido autenticado, callers não devem usar `InvalidVaultError` para inferir nem comunicar que a senha está correta. A UI deve apresentar uma mensagem genérica de falha ao abrir para qualquer erro de abertura e não publicar snapshot/sessão em nenhum desses casos.
 
 Trocar senha cria salt, chave e stream header novos, e regrava o snapshot completo. A sessão troca sua chave somente depois de a substituição do arquivo ter ocorrido com sucesso.
 

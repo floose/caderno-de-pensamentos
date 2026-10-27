@@ -10,6 +10,7 @@ import struct
 import unicodedata
 
 from .model import AuthenticationError, InvalidVaultError, VaultAttachment, VaultSnapshot
+from .schema import reject_duplicate_keys, validate_document_v1
 
 MAGIC = b"CPVAULT\0"
 VERSION = 1
@@ -65,6 +66,8 @@ def new_key(password: str) -> tuple[bytes, bytes]:
 
 def _manifest(snapshot: VaultSnapshot) -> bytes:
     """Serializa documento e descritores; dados binários ficam em registros próprios."""
+    document = snapshot.document
+    validate_document_v1(document, snapshot.attachments)
     attachments = []
     total = 0
     for item in snapshot.attachments:
@@ -75,7 +78,7 @@ def _manifest(snapshot: VaultSnapshot) -> bytes:
         raise ValueError("Limites de anexos excedidos")
     if any(len(a.data) > MAX_ATTACHMENT for a in snapshot.attachments):
         raise ValueError("Limite por anexo excedido")
-    raw = json.dumps({"document": snapshot.document, "attachments": attachments}, ensure_ascii=False,
+    raw = json.dumps({"document": document, "attachments": attachments}, ensure_ascii=False,
                      separators=(",", ":"), allow_nan=False).encode("utf-8")
     if len(raw) > MAX_MANIFEST:
         raise ValueError("Manifesto excede o limite")
@@ -187,6 +190,8 @@ def decrypt_file(path: str, password: str):
         return _decrypt(path, password, bindings, state, tag_message, tag_final)
     except AuthenticationError:
         raise
+    except InvalidVaultError:
+        raise
     except Exception as exc:
         raise AuthenticationError("Senha incorreta ou arquivo alterado") from exc
 
@@ -220,33 +225,31 @@ def _parse_plaintext(raw: bytes) -> VaultSnapshot:
     manifest_size = struct.unpack_from(">I", raw, 1)[0]
     if manifest_size > MAX_MANIFEST or 5 + manifest_size > len(raw):
         raise InvalidVaultError("Manifesto CPV1 inválido")
-    manifest = json.loads(raw[5:5 + manifest_size].decode("utf-8"))
-    if not isinstance(manifest, dict) or not isinstance(manifest.get("document"), dict):
+    manifest = json.loads(raw[5:5 + manifest_size].decode("utf-8"), object_pairs_hook=reject_duplicate_keys)
+    if (not isinstance(manifest, dict) or set(manifest) != {"document", "attachments"}
+            or not isinstance(manifest.get("document"), dict)):
         raise InvalidVaultError("Documento inválido")
     if manifest["document"].get("schema_version") != 1:
         raise InvalidVaultError("Versão de schema inválida")
-    _check_document_bounds(manifest["document"])
     pos = 5 + manifest_size
     descriptors = manifest.get("attachments")
     if not isinstance(descriptors, list) or len(descriptors) > MAX_ATTACHMENTS:
         raise InvalidVaultError("Manifesto CPV1 inválido")
+    _validate_outer_descriptors(descriptors)
     attachments = _parse_attachments(raw, pos, descriptors)
+    validate_document_v1(manifest["document"], attachments)
     return VaultSnapshot(manifest["document"], attachments)
 
 
-def _check_document_bounds(document: dict):
-    """Limita nós e profundidade para conter estruturas JSON patológicas."""
-    pending = [(document, 0)]
-    nodes = 0
-    while pending:
-        value, depth = pending.pop()
-        nodes += 1
-        if nodes > 100_000 or depth > 64:
-            raise InvalidVaultError("Estrutura do documento excede os limites")
-        if isinstance(value, dict):
-            pending.extend((item, depth + 1) for item in value.values())
-        elif isinstance(value, list):
-            pending.extend((item, depth + 1) for item in value)
+def _validate_outer_descriptors(descriptors: list):
+    required = {"id", "name", "media_type", "size"}
+    for item in descriptors:
+        if not isinstance(item, dict) or set(item) != required:
+            raise InvalidVaultError("Descritor binário inválido")
+        if not all(isinstance(item[field], str) and item[field] for field in ("id", "name", "media_type")):
+            raise InvalidVaultError("Metadados binários inválidos")
+        if type(item["size"]) is not int or item["size"] < 0:
+            raise InvalidVaultError("Tamanho de anexo inválido")
 
 
 def _parse_attachments(raw: bytes, pos: int, descriptors: list) -> tuple[VaultAttachment, ...]:
