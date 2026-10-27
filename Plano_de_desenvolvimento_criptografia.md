@@ -13,9 +13,9 @@ Isso ainda é um protótipo: PyNaCl 1.6.2 está instalado no ambiente do projeto
 
 **Estado atual:** o núcleo e o benchmark inicial foram testados no runtime Python deste Mac. A revisão cética dos testes atuais não encontrou achados críticos/altos abertos. A UI pode começar a usar a fachada com fixtures sintéticas; dados pessoais e distribuição aguardam validação do `.app` arm64 e integração completa.
 
-## Objetivo da primeira entrega
+## Critério de validação do núcleo
 
-Comprovar, antes de integrar a interface, que a fixture sintética de dois textos e uma imagem pode ser criada, aberta, editada, salva e reaberta como um único arquivo criptografado. Senha errada, adulteração, truncamento e falha de gravação devem falhar sem entregar conteúdo parcial nem destruir uma versão válida.
+O critério do núcleo é comprovar que uma fixture sintética de textos e imagem pode ser criada, aberta, editada, salva e reaberta como um único arquivo criptografado, e que senha errada, adulteração, truncamento e falha de gravação não entregam conteúdo parcial nem destroem uma versão válida. Esse critério foi exercitado no backend Python com PyNaCl real e fixtures sintéticas. A UI pode começar a integrar a fachada com esses dados; a validação do ciclo no `.app` arm64 continua pendente antes de dados pessoais.
 
 ## Limites de trabalho
 
@@ -78,6 +78,8 @@ Comprovar, antes de integrar a interface, que a fixture sintética de dois texto
 - [ ] Confirmar que PyNaCl/libsodium entra corretamente no `.app` macOS arm64 e medir seu tempo/memória.
 - [ ] Integrar criar/selecionar/desbloquear base e salvar snapshots pela API; manter formato CPV1 fora da UI e mostrar mensagem genérica em qualquer falha de abertura.
 - [ ] Validar no `.app` os fluxos de criar, abrir, salvar, reabrir, trocar senha e recusar senha errada antes de considerar o ciclo de integração concluído.
+
+A UI será integrada em fatias verticais na branch `feature/ui-vault-integration`, usando a fachada pública e fixtures sintéticas. A sequência e os papéis dos agentes estão no “Processo de desenvolvimento da UI e das funcionalidades” do [`Plano_do_projeto.md`](Plano_do_projeto.md). A prova `.app` arm64 pode avançar em paralelo; dados pessoais continuam bloqueados até os gates de integração descritos ali.
 
 ## Papéis dos agentes
 

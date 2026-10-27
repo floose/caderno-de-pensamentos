@@ -110,6 +110,34 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 
 Produzir o pacote em um Mac arm64, validar as arquiteturas das dependências e testar a abertura após extrair o ZIP em outro local. A distribuição inicial é para uso próprio/testes, sem assinatura Developer ID ou notarização.
 
+### Processo de desenvolvimento da UI e das funcionalidades
+
+**Estratégia escolhida: fatias verticais por fluxo.** Cada entrega completa uma tarefa de ponta a ponta — interface, estado da aplicação e chamada ao cofre — para obter feedback de integração cedo. Foram consideradas duas alternativas: construir todas as telas com dados falsos antes de conectá-las, o que pode afastar o comportamento da API real; ou implementar o domínio de todas as funções antes da UI, o que atrasa o feedback de uso. Ambas podem servir a protótipos curtos, mas não serão o fluxo principal.
+
+**Branch de trabalho:** `feature/ui-vault-integration`, criada a partir de `feature/vault-encryption`. A `main` permanece preservada durante a implementação. A integração com a `main` será feita em etapas revisáveis, após autorização explícita.
+
+**Dados de desenvolvimento:** usar somente fixtures sintéticas versionadas, como `tests/fixtures/cofre_exemplo.json` e `tests/fixtures/pixel.png`. Não usar as imagens locais ignoradas de `tests/fixtures/imagens/` na UI, pois podem conter material privado. A interface chama a fachada `caderno.vault`; não importa o codec nem conhece detalhes internos do CPV1.
+
+**Ordem das fatias:**
+
+1. Criar, selecionar, abrir e fechar base; tratar base ausente, senha incorreta e arquivo inválido; guardar apenas o último caminho.
+2. Listar, criar, editar e excluir uma nota; salvar, fechar e reabrir sem perder conteúdo.
+3. Organizar notas em coleções e hashtags; suportar rascunhos, favoritos e datas.
+4. Buscar, filtrar e ordenar notas; editar e visualizar Markdown.
+5. Anexar e visualizar imagens; adicionar o calendário baseado nas datas das notas.
+6. Completar backup/restauração, troca de senha na interface, acessibilidade e comportamento ao fechar o aplicativo.
+
+Uma prova mínima do `.app` arm64, com Tkinter e PyNaCl, avança em paralelo à primeira fatia para identificar cedo problemas de empacotamento. O `.app` integrado precisa passar o ciclo de criar, abrir, salvar, reabrir e trocar senha antes do uso com dados pessoais.
+
+**Ciclo dos agentes por fatia:**
+
+- O agente de design descreve o fluxo, estados vazios/carregando/erro, protótipo visual e critérios de aceite.
+- O agente técnico de UI propõe os testes automatizados antes da implementação, cobrindo a regra ou fluxo e as falhas relevantes com fixtures sintéticas.
+- O agente implementador conecta a tela à fachada pública e executa os testes da fatia.
+- O agente cético tenta encontrar inconsistências e lacunas; a fatia só termina quando achados críticos/altos forem resolvidos e os critérios de aceite passarem.
+
+**Gate de dados reais:** não usar dados pessoais até o `.app` arm64 e o fluxo integrado serem validados, erros de abertura serem genéricos, backup/restauração e falhas de persistência terem testes, e a UI não guardar senha/chave nem gravar conteúdo em claro fora do cofre.
+
 ## Gantt ASCII
 
 Estimativa relativa em semanas de trabalho; não representa datas prometidas. Atualizar os marcadores conforme o progresso real.
@@ -133,5 +161,5 @@ Legenda: ██ trabalho previsto; .. sem atividade prevista.
 - **Estado atual:** primeira versão restrita a Apple Silicon (`arm64`), macOS 14 Sonoma ou posterior, Tkinter e distribuição inicial para uso próprio/testes.
 - **Estado do protótipo:** a primeira janela visual Tkinter está implementada em `src/caderno/ui.py`; os controles ainda são apenas visuais.
 - **Estado do cofre:** CPV1 é um protótipo isolado; 48 testes do núcleo passaram com PyNaCl real e fixtures sintéticas, e o agente cético revisou a cobertura sem achar bloqueadores críticos/altos. A validação do `.app` e a integração com a UI continuam pendentes. Consulte [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
-- **Próximo marco:** começar a UI contra a fachada do cofre usando somente dados sintéticos, enquanto se prepara o `.app` arm64. Antes de dados pessoais, validar o ciclo completo no pacote, mensagens de erro, backup/restauração e os limites em Macs suportados.
+- **Próximo marco:** projetar e implementar a primeira fatia — criar, selecionar, abrir e fechar base com fixtures sintéticas — enquanto se prepara a prova `.app` arm64. O processo e a sequência estão documentados em “Processo de desenvolvimento da UI e das funcionalidades”.
 - **Atualizado em:** 2026-10-27.

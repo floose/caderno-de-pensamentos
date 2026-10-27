@@ -27,6 +27,8 @@ Se documentos discordarem, confirme o código e o Git; registre cada decisão cr
 ## Estado conhecido na última atualização
 
 - Branch de trabalho criptográfico: `feature/vault-encryption`.
+- Branch atual para integração da UI: `feature/ui-vault-integration`, criada a partir do commit `dd3c523` da branch criptográfica; a `main` permanece sem alterações.
+- Estratégia acordada para UI: fatias verticais com fixtures sintéticas, usando a fachada `caderno.vault`; prova do `.app` arm64 em paralelo. Sequência de features e processo design → testes técnicos → implementação → revisão cética constam no `Plano_do_projeto.md`.
 - A camada isolada está em `src/caderno/vault/`; ela deve continuar sem dependência da UI Tkinter.
 - CPV1 usa PyNaCl/libsodium, Argon2id e `crypto_secretstream_xchacha20poly1305`; detalhes, limites, formato e garantias estão na decisão arquitetural.
 - PyNaCl 1.6.2 está instalado no `.venv` do projeto. Última suíte completa: **48 passed em 94,91 s, sem skips**; após ajuste editorial no nome do teste de temporário, o teste focal passou novamente. Inclui schema e tipos estritos, adulteração real, troca de senha, spy pré-KDF, falha real pré-replace com retry/limpeza, sessão fechada sem KDF, conflito entre duas sessões, criação modo `0600` e busca de marcadores plaintext selecionados no temporário.
