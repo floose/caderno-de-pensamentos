@@ -120,6 +120,12 @@ class VaultSession:
         self._ensure_open()
         return self._snapshot
 
+    @property
+    def path(self) -> Path:
+        """Retorna o caminho do arquivo associado à sessão desbloqueada."""
+        self._ensure_open()
+        return self._path
+
     def save(self, snapshot: VaultSnapshot) -> None:
         """Persiste o snapshot com a chave atual, rejeitando revisões obsoletas."""
         self._store(snapshot, self._salt, self._key)

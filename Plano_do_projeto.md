@@ -127,6 +127,20 @@ Produzir o pacote em um Mac arm64, validar as arquiteturas das dependências e t
 5. Anexar e visualizar imagens; adicionar o calendário baseado nas datas das notas.
 6. Completar backup/restauração, troca de senha na interface, acessibilidade e comportamento ao fechar o aplicativo.
 
+### Como testar manualmente a UI atual (macOS)
+
+Use uma pasta temporária para que o teste não leia nem altere a preferência real do aplicativo. No terminal integrado do VS Code, execute uma vez:
+
+```sh
+export CADERNO_CONFIG_DIR="$(mktemp -d)"
+export PYTHONPATH=src
+.venv/bin/python -m caderno
+```
+
+Mantenha o mesmo terminal aberto para que os dois valores continuem definidos. Na primeira janela, escolha **Criar base**. No diálogo de arquivo, use `echo "$CADERNO_CONFIG_DIR"` para obter a pasta e `⌘⇧G` para navegar até ela; salve como `teste.cpv`, digite e confirme uma senha. A tela deve indicar que a base está aberta e mostrar zero textos e uma coleção. Use **Fechar base**, depois escolha a base existente e tente primeiro uma senha incorreta: o aplicativo deve mostrar erro genérico e deixar a base fechada. Repita com a senha correta; a base deve abrir. Feche a janela e execute `.venv/bin/python -m caderno` novamente no mesmo terminal: o aplicativo deve encontrar a última base e pedir a senha.
+
+Para testar um arquivo inválido, crie um arquivo de texto na pasta temporária e selecione-o como base pelo filtro **Todos os arquivos**; a interface deve informar que não foi possível abrir, sem encerrar o aplicativo. Esses passos testam a janela e o backend criptográfico local com dados descartáveis. Os testes automatizados continuam complementares; a validação visual do `.app` empacotado é uma etapa futura.
+
 Uma prova mínima do `.app` arm64, com Tkinter e PyNaCl, avança em paralelo à primeira fatia para identificar cedo problemas de empacotamento. O `.app` integrado precisa passar o ciclo de criar, abrir, salvar, reabrir e trocar senha antes do uso com dados pessoais.
 
 **Ciclo dos agentes por fatia:**
@@ -159,7 +173,7 @@ Legenda: ██ trabalho previsto; .. sem atividade prevista.
 ## Acompanhamento
 
 - **Estado atual:** primeira versão restrita a Apple Silicon (`arm64`), macOS 14 Sonoma ou posterior, Tkinter e distribuição inicial para uso próprio/testes.
-- **Estado do protótipo:** a primeira janela visual Tkinter está implementada em `src/caderno/ui.py`; os controles ainda são apenas visuais.
+- **Estado da UI:** a janela Tkinter já permite criar, escolher, abrir e fechar uma base pela fachada `caderno.vault`. O aplicativo lembra somente o caminho em preferências locais; senha e chave permanecem fora delas. Há testes unitários de UI e preferências locais; a edição de notas e a validação da janela real no `.app` ainda não foram implementadas.
 - **Estado do cofre:** CPV1 é um protótipo isolado; 48 testes do núcleo passaram com PyNaCl real e fixtures sintéticas, e o agente cético revisou a cobertura sem achar bloqueadores críticos/altos. A validação do `.app` e a integração com a UI continuam pendentes. Consulte [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
-- **Próximo marco:** projetar e implementar a primeira fatia — criar, selecionar, abrir e fechar base com fixtures sintéticas — enquanto se prepara a prova `.app` arm64. O processo e a sequência estão documentados em “Processo de desenvolvimento da UI e das funcionalidades”.
+- **Próximo marco:** conectar a criação e edição da primeira nota com persistência no cofre; em paralelo, preparar a prova `.app` arm64. O ciclo de abrir/criar/fechar tem testes unitários, mas ainda precisa de validação manual na janela empacotada. O processo e a sequência estão documentados em “Processo de desenvolvimento da UI e das funcionalidades”.
 - **Atualizado em:** 2026-10-27.
