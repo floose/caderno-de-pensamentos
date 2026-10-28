@@ -95,6 +95,43 @@ def test_close_vault_closes_session_and_returns_to_locked_state():
     app.show_locked.assert_called_once_with()
 
 
+def test_locked_and_unlocked_views_choose_the_shared_button_variants():
+    app = bare_app()
+    app.status = Mock()
+    app.status_detail = Mock()
+    app.close_button = Mock()
+    app.summary_values = []
+    app.update_summary = Mock()
+    app.render_state = Mock()
+
+    app.show_locked()
+    locked_actions = app.render_state.call_args.args[2:]
+    assert [action[2] for action in locked_actions] == ["primary", "primary"]
+
+    app.render_state.reset_mock()
+    session = Mock(path=Path("synthetic.cpv"), snapshot=Mock(document={"entries": [], "collections": []}))
+    app.show_unlocked(session)
+    unlocked_actions = app.render_state.call_args.args[2:]
+    assert [action[2] for action in unlocked_actions] == ["secondary", "secondary"]
+
+
+def test_sidebar_close_button_uses_the_same_secondary_variant(monkeypatch):
+    class FakeWidget:
+        def pack(self, **_kwargs):
+            pass
+
+    monkeypatch.setattr(ui.tk, "Frame", lambda *_args, **_kwargs: FakeWidget())
+    monkeypatch.setattr(ui.tk, "Label", lambda *_args, **_kwargs: FakeWidget())
+    make_button = Mock(return_value=FakeWidget())
+    monkeypatch.setattr(ui, "make_button", make_button)
+    app = Mock()
+
+    ui.build_sidebar_status(None, app)
+
+    assert make_button.call_args.args[1:3] == ("Fechar base", "secondary")
+    assert make_button.call_args.kwargs["command"] == app.close_vault
+
+
 def test_restore_missing_last_vault_warns_without_trying_to_unlock(tmp_path, monkeypatch):
     app = bare_app()
     missing_path = tmp_path / "missing.cpv"

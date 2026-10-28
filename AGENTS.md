@@ -9,6 +9,7 @@ Antes de alterar o projeto, leia [`MEMORIA_DO_PROJETO.md`](MEMORIA_DO_PROJETO.md
 - Não implemente código sem solicitação explícita; quando solicitado, conclua a tarefa e informe arquivos alterados e validações feitas.
 - Preserve a privacidade: não adicione caminhos pessoais, nomes, localização, segredos, dados reais ou informações da máquina ao código, testes e documentação versionada.
 - Prefira soluções pequenas e claras. Mantenha funções com até 50 linhas; divida-as quando necessário.
+- Evite ambiguidade no código: use nomes e APIs que expressem uma intenção semântica única, remova parâmetros redundantes ou concorrentes e centralize valores/estilos repetidos em tokens ou objetos compartilhados. Encapsule comportamento compartilhado quando isso reduzir divergência, sem criar abstrações além do necessário.
 - Documente APIs públicas e funções sensíveis com docstrings que expliquem finalidade, entradas/saídas, erros e garantias relevantes. Comente invariantes criptográficas ou de persistência não óbvias; evite comentários linha a linha que apenas repetem o código.
 - Crie testes automatizados para funcionalidades e regressões de bugs.
 - Toda mudança de UI deve incluir um modo reproduzível de experimentá-la pela janela real, com instruções curtas e resultados esperados; testes unitários isolados não substituem esse roteiro manual. Atualize o script raiz `testar_ui.command`, que roda os testes focados da UI e inicia o app num perfil de teste que rejeita cofres fora da pasta sintética.

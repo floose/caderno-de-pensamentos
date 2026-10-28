@@ -1,8 +1,10 @@
 import os
 import tkinter as tk
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tkinter import filedialog, font, messagebox, simpledialog
+from typing import Literal
 
 if __package__:
     from .preferences import load_last_vault, save_last_vault
@@ -11,22 +13,151 @@ else:
     from preferences import load_last_vault, save_last_vault
     from vault import DurabilityUncertainError, VaultSession, VaultSnapshot, create_vault, open_vault
 
+ButtonVariant = Literal["primary", "secondary"]
 
-PAPER = "#f5f3ee"
-SIDEBAR = "#f0eee8"
-PANEL = "#fffefa"
-INK = "#202622"
-MUTED = "#5f665e"
-LINE = "#e8e6df"
-GREEN = "#355c47"
-PRIMARY_BUTTON = "#294b38"
-SECONDARY_BUTTON = "#dfe4dc"
-SECONDARY_ACTIVE = "#cfd8cc"
-SAGE = "#536b56"
-DISABLED_BUTTON = "#e3e5de"
-STATE_PANEL = "#f7f6f1"
-FIELD_BORDER = "#7c8278"
-FOCUS_ON_PRIMARY = "#f6f3e9"
+
+@dataclass(frozen=True)
+class ButtonStyle:
+    """Cores semânticas de um botão em repouso, ativo e com foco."""
+
+    background: str
+    foreground: str
+    active_background: str
+    active_foreground: str
+    focus: str
+
+
+@dataclass(frozen=True)
+class UILayout:
+    """Dimensões e espaçamentos usados para compor a janela."""
+
+    window_size: tuple
+    minimum_window_size: tuple
+    sidebar_width: int
+    sidebar_padding_x: int
+    sidebar_padding_y: int
+    main_horizontal_padding: int
+    main_vertical_padding: int
+    topbar_vertical_padding: int
+    state_horizontal_padding: int
+    state_vertical_padding: int
+    button_horizontal_padding: int
+    highlight_thickness: int
+    button_vertical_padding: int
+    search_gap: int
+    search_vertical_padding: int
+    search_bottom_padding: int
+    state_description_wrap: int
+    state_icon_bottom_padding: int
+    state_description_padding: tuple
+    state_action_padding: int
+    welcome_title_padding: tuple
+    summary_vertical_padding: tuple
+
+
+@dataclass(frozen=True)
+class UITheme:
+    """Tokens visuais compartilhados pela interface Tkinter."""
+
+    paper: str
+    sidebar: str
+    panel: str
+    ink: str
+    muted: str
+    line: str
+    green: str
+    sage: str
+    state_panel: str
+    field_border: str
+    state_icon_background: str
+    state_icon_foreground: str
+    state_title: str
+    selected_navigation_background: str
+    selected_navigation_foreground: str
+    locked_status: str
+    welcome_title: str
+    empty_state_border: str
+    brand_mark_foreground: str
+    on_primary_button: str
+    primary_button_background: str
+    primary_button_active_background: str
+    secondary_button_background: str
+    secondary_button_active_background: str
+    disabled_button_background: str
+    font_body: tuple
+    font_text: tuple
+    font_fixed: tuple
+    font_button: tuple
+    font_label: tuple
+    font_tiny: tuple
+    font_brand: tuple
+    font_brand_name: tuple
+    font_brand_subtitle: tuple
+    font_icon: tuple
+    font_collection_add: tuple
+    font_title: tuple
+    font_heading: tuple
+    font_summary: tuple
+    font_mono_small: tuple
+    layout: UILayout
+
+    @property
+    def primary_button(self) -> ButtonStyle:
+        return ButtonStyle(
+            self.primary_button_background, self.on_primary_button,
+            self.primary_button_active_background, self.on_primary_button,
+            self.green,
+        )
+
+    @property
+    def secondary_button(self) -> ButtonStyle:
+        return ButtonStyle(
+            self.secondary_button_background, self.ink,
+            self.secondary_button_active_background, self.ink, self.green,
+        )
+
+    @property
+    def disabled_button(self) -> ButtonStyle:
+        return ButtonStyle(
+            self.disabled_button_background, self.muted,
+            self.disabled_button_background, self.muted, self.green,
+        )
+
+
+THEME = UITheme(
+    paper="#f5f3ee", sidebar="#f0eee8", panel="#fffefa", ink="#202622",
+    muted="#5f665e", line="#e8e6df", green="#355c47", sage="#536b56",
+    state_panel="#f7f6f1", field_border="#7c8278",
+    state_icon_background="#f1f2ec", state_icon_foreground="#6d826f",
+    state_title="#38453b", selected_navigation_background="#e4e5dd",
+    selected_navigation_foreground="#273b30", locked_status="#5b655c",
+    welcome_title="#252c27", empty_state_border="#dcdcd3",
+    brand_mark_foreground="#f6f3e9",
+    on_primary_button="#202622", primary_button_background="#c8d5c7",
+    primary_button_active_background="#c0cfbe",
+    secondary_button_background="#dfe4dc", secondary_button_active_background="#cfd8cc",
+    disabled_button_background="#e3e5de",
+    font_body=("Arial", 12), font_text=("Georgia", 14),
+    font_fixed=("Menlo", 12), font_button=("Arial", 12, "bold"),
+    font_label=("Arial", 11), font_tiny=("Arial", 10),
+    font_brand=("Georgia", 20, "bold"), font_brand_name=("Arial", 12, "bold"),
+    font_brand_subtitle=("Georgia", 11, "italic"), font_icon=("Georgia", 22),
+    font_collection_add=("Arial", 18),
+    font_title=("Georgia", 34), font_heading=("Georgia", 22),
+    font_summary=("Georgia", 18), font_mono_small=("Menlo", 10),
+    layout=UILayout(
+        window_size=(1180, 760), minimum_window_size=(900, 620),
+        sidebar_width=250, sidebar_padding_x=18, sidebar_padding_y=24,
+        main_horizontal_padding=48, main_vertical_padding=45,
+        topbar_vertical_padding=20, state_horizontal_padding=20,
+        state_vertical_padding=34, button_horizontal_padding=12,
+        highlight_thickness=1, button_vertical_padding=9,
+        search_gap=12, search_vertical_padding=10, search_bottom_padding=18,
+        state_description_wrap=480, state_icon_bottom_padding=10,
+        state_description_padding=(7, 15), state_action_padding=3,
+        welcome_title_padding=(9, 4), summary_vertical_padding=(27, 23),
+    ),
+)
 
 
 class CadernoApp:
@@ -36,12 +167,12 @@ class CadernoApp:
         self.root = root
         self.session: VaultSession | None = None
         root.title("Caderno de Pensamentos")
-        root.geometry("1180x760")
-        root.minsize(900, 620)
-        root.configure(bg=PAPER)
+        root.geometry(f"{THEME.layout.window_size[0]}x{THEME.layout.window_size[1]}")
+        root.minsize(*THEME.layout.minimum_window_size)
+        root.configure(bg=THEME.paper)
         root.protocol("WM_DELETE_WINDOW", self.close_app)
         configure_fonts()
-        shell = tk.Frame(root, bg=PAPER)
+        shell = tk.Frame(root, bg=THEME.paper)
         shell.pack(fill="both", expand=True)
         build_sidebar(shell, self)
         build_main_panel(shell, self)
@@ -166,7 +297,7 @@ class CadernoApp:
         self.show_unlocked(session)
 
     def show_locked(self):
-        self.status.configure(text="●  Nenhuma base aberta", fg="#5b655c")
+        self.status.configure(text="●  Nenhuma base aberta", fg=THEME.locked_status)
         self.status_detail.configure(text="Escolha ou crie uma base para começar")
         self.close_button.pack_forget()
         self.update_summary(None)
@@ -178,7 +309,7 @@ class CadernoApp:
         )
 
     def show_unlocked(self, session: VaultSession):
-        self.status.configure(text="●  Base aberta", fg=GREEN)
+        self.status.configure(text="●  Base aberta", fg=THEME.green)
         self.status_detail.configure(text=session.path.name)
         self.close_button.pack(fill="x", padx=8, pady=(8, 0))
         self.update_summary(session.snapshot.document)
@@ -208,17 +339,24 @@ class CadernoApp:
     def render_state(self, title: str, description: str, *actions):
         for child in self.state_area.winfo_children():
             child.destroy()
-        tk.Label(self.state_area, text="✳", bg="#f1f2ec", fg="#6d826f", font=("Georgia", 20), width=3).pack(pady=(0, 10))
-        tk.Label(self.state_area, text=title, bg=STATE_PANEL, fg="#38453b", font=("Georgia", 18)).pack()
         tk.Label(
-            self.state_area, text=description, bg=STATE_PANEL, fg=MUTED, font=("Arial", 9),
-            wraplength=600,
-        ).pack(pady=(7, 15))
+            self.state_area, text="✳", bg=THEME.state_icon_background,
+            fg=THEME.state_icon_foreground, font=THEME.font_icon, width=3,
+        ).pack(pady=(0, THEME.layout.state_icon_bottom_padding))
+        tk.Label(
+            self.state_area, text=title, bg=THEME.state_panel,
+            fg=THEME.state_title, font=THEME.font_heading,
+        ).pack()
+        tk.Label(
+            self.state_area, text=description, bg=THEME.state_panel, fg=THEME.muted,
+            font=THEME.font_label,
+            wraplength=THEME.layout.state_description_wrap,
+        ).pack(pady=THEME.layout.state_description_padding)
         for label, callback, variant in actions:
             make_button(
-                self.state_area, label, GREEN, "white", pady=9,
-                command=callback, variant=variant,
-            ).pack(pady=3)
+                self.state_area, label, variant,
+                pady=THEME.layout.button_vertical_padding, command=callback,
+            ).pack(pady=THEME.layout.state_action_padding)
 
     def close_vault(self):
         """Fecha a sessão e descarta as referências mantidas pela interface."""
@@ -253,113 +391,118 @@ def build_app(root: tk.Tk) -> None:
 
 
 def configure_fonts() -> None:
-    font.nametofont("TkDefaultFont").configure(family="Arial", size=10)
-    font.nametofont("TkTextFont").configure(family="Georgia", size=12)
-    font.nametofont("TkFixedFont").configure(family="Menlo", size=10)
+    for name, specification in (
+        ("TkDefaultFont", THEME.font_body),
+        ("TkTextFont", THEME.font_text),
+        ("TkFixedFont", THEME.font_fixed),
+    ):
+        font.nametofont(name).configure(family=specification[0], size=specification[1])
 
 
 def build_sidebar(parent: tk.Widget, app: CadernoApp) -> None:
-    sidebar = tk.Frame(parent, bg=SIDEBAR, width=250, padx=18, pady=24)
+    sidebar = tk.Frame(
+        parent, bg=THEME.sidebar, width=THEME.layout.sidebar_width,
+        padx=THEME.layout.sidebar_padding_x, pady=THEME.layout.sidebar_padding_y,
+    )
     sidebar.pack(side="left", fill="y")
     sidebar.pack_propagate(False)
 
     build_brand(sidebar)
-    make_button(sidebar, "+  Novo texto", GREEN, "white", pady=11, state="disabled").pack(fill="x", pady=(0, 20))
+    make_button(sidebar, "+  Novo texto", "primary", pady=11, state="disabled").pack(fill="x", pady=(0, 20))
     build_navigation(sidebar)
     build_collections(sidebar)
     build_sidebar_status(sidebar, app)
 
 
 def build_brand(parent: tk.Widget) -> None:
-    brand = tk.Frame(parent, bg=SIDEBAR)
+    brand = tk.Frame(parent, bg=THEME.sidebar)
     brand.pack(fill="x", pady=(0, 26))
     tk.Label(
         brand,
         text="c.",
-        bg=GREEN,
-        fg="#f6f3e9",
-        font=("Georgia", 19, "bold"),
+        bg=THEME.green,
+        fg=THEME.brand_mark_foreground,
+        font=THEME.font_brand,
         width=3,
         height=1,
     ).pack(side="left")
-    text = tk.Frame(brand, bg=SIDEBAR)
+    text = tk.Frame(brand, bg=THEME.sidebar)
     text.pack(side="left", padx=10)
     tk.Label(
-        text, text="Caderno", bg=SIDEBAR, fg=INK, font=("Arial", 11, "bold")
+        text, text="Caderno", bg=THEME.sidebar, fg=THEME.ink, font=THEME.font_brand_name
     ).pack(anchor="w")
     tk.Label(
         text,
         text="de conhecimento",
-        bg=SIDEBAR,
-        fg=MUTED,
-        font=("Georgia", 10, "italic"),
+        bg=THEME.sidebar,
+        fg=THEME.muted,
+        font=THEME.font_brand_subtitle,
     ).pack(anchor="w")
 
 
 def build_navigation(parent: tk.Widget) -> None:
     items = ("▤   Todos os textos", "◷   Recentes", "☆   Favoritos", "⚙   Configurações")
     for index, label in enumerate(items):
-        bg = "#e4e5dd" if index == 0 else SIDEBAR
-        fg = "#273b30" if index == 0 else MUTED
+        bg = THEME.selected_navigation_background if index == 0 else THEME.sidebar
+        fg = THEME.selected_navigation_foreground if index == 0 else THEME.muted
         row = tk.Frame(parent, bg=bg)
         row.pack(fill="x", pady=1)
-        tk.Frame(row, bg=GREEN if index == 0 else bg, width=3).pack(side="left", fill="y")
+        tk.Frame(row, bg=THEME.green if index == 0 else bg, width=3).pack(side="left", fill="y")
         tk.Label(
             row, text=label, bg=bg, fg=fg, anchor="w", padx=10, pady=10
         ).pack(side="left", fill="x", expand=True)
 
 
 def build_collections(parent: tk.Widget) -> None:
-    heading = tk.Frame(parent, bg=SIDEBAR)
+    heading = tk.Frame(parent, bg=THEME.sidebar)
     heading.pack(fill="x", pady=(27, 8))
     tk.Label(
-        heading, text="COLEÇÕES", bg=SIDEBAR, fg=MUTED, font=("Menlo", 8)
+        heading, text="COLEÇÕES", bg=THEME.sidebar, fg=THEME.muted, font=THEME.font_mono_small
     ).pack(side="left", padx=10)
     tk.Label(
-        heading, text="+", bg=SIDEBAR, fg=MUTED, font=("Arial", 15)
+        heading, text="+", bg=THEME.sidebar, fg=THEME.muted, font=THEME.font_collection_add
     ).pack(side="right", padx=8)
     tk.Label(
         parent,
         text="Suas coleções aparecerão aqui",
-        bg=SIDEBAR,
-        fg=MUTED,
+        bg=THEME.sidebar,
+        fg=THEME.muted,
         anchor="w",
         padx=10,
         pady=8,
-        font=("Arial", 9),
+        font=THEME.font_label,
     ).pack(fill="x")
 
 
 def build_sidebar_status(parent: tk.Widget, app: CadernoApp) -> None:
-    status = tk.Frame(parent, bg=SIDEBAR)
+    status = tk.Frame(parent, bg=THEME.sidebar)
     status.pack(side="bottom", fill="x")
-    tk.Frame(status, bg=LINE, height=1).pack(fill="x", pady=(0, 12))
+    tk.Frame(status, bg=THEME.line, height=1).pack(fill="x", pady=(0, 12))
     app.status = tk.Label(
         status,
         text="●  Nenhuma base aberta",
-        bg=SIDEBAR,
+        bg=THEME.sidebar,
         anchor="w",
-        font=("Arial", 9, "bold"),
+        font=THEME.font_label + ("bold",),
     )
     app.status.pack(fill="x", padx=9)
     app.status_detail = tk.Label(
         status,
         text="Escolha ou crie uma base para começar",
-        bg=SIDEBAR,
-        fg=MUTED,
+        bg=THEME.sidebar,
+        fg=THEME.muted,
         anchor="w",
-        font=("Arial", 8),
+        font=THEME.font_tiny,
         wraplength=200,
     )
     app.status_detail.pack(fill="x", padx=9, pady=(5, 10))
     app.close_button = make_button(
-        status, "Fechar base", PANEL, INK, pady=7,
-        command=app.close_vault, variant="secondary",
+        status, "Fechar base", "secondary", pady=7, command=app.close_vault,
     )
 
 
 def build_main_panel(parent: tk.Widget, app: CadernoApp) -> None:
-    main = tk.Frame(parent, bg=PAPER)
+    main = tk.Frame(parent, bg=THEME.paper)
     main.pack(side="left", fill="both", expand=True)
     build_topbar(main)
     build_library(main, app)
@@ -368,31 +511,34 @@ def build_main_panel(parent: tk.Widget, app: CadernoApp) -> None:
 def build_topbar(parent: tk.Widget) -> None:
     topbar = tk.Frame(
         parent,
-        bg=PAPER,
-        padx=48,
-        pady=20,
-        highlightbackground=LINE,
-        highlightthickness=1,
+        bg=THEME.paper,
+        padx=THEME.layout.main_horizontal_padding,
+        pady=THEME.layout.topbar_vertical_padding,
+        highlightbackground=THEME.line,
+        highlightthickness=THEME.layout.highlight_thickness,
     )
     topbar.pack(fill="x")
     tk.Label(
         topbar,
         text="Seu espaço   /   Todos os textos",
-        bg=PAPER,
-        fg=MUTED,
-        font=("Arial", 9),
+        bg=THEME.paper,
+        fg=THEME.muted,
+        font=THEME.font_label,
     ).pack(side="left")
     tk.Label(
         topbar,
         text="PROTÓTIPO VISUAL     ◷  Calendário",
-        bg=PAPER,
-        fg=SAGE,
-        font=("Arial", 9),
+        bg=THEME.paper,
+        fg=THEME.sage,
+        font=THEME.font_label,
     ).pack(side="right")
 
 
 def build_library(parent: tk.Widget, app: CadernoApp) -> None:
-    content = tk.Frame(parent, bg=PAPER, padx=48, pady=45)
+    content = tk.Frame(
+        parent, bg=THEME.paper, padx=THEME.layout.main_horizontal_padding,
+        pady=THEME.layout.main_vertical_padding,
+    )
     content.pack(fill="both", expand=True)
     build_welcome(content)
     build_summary(content, app)
@@ -402,111 +548,111 @@ def build_library(parent: tk.Widget, app: CadernoApp) -> None:
 
 def build_welcome(parent: tk.Widget) -> None:
     tk.Label(
-        parent, text="SEU ARQUIVO PESSOAL", bg=PAPER, fg=MUTED, font=("Menlo", 8)
+        parent, text="SEU ARQUIVO PESSOAL", bg=THEME.paper, fg=THEME.muted, font=THEME.font_mono_small
     ).pack(anchor="w")
     tk.Label(
         parent,
         text="Um lugar para suas ideias.",
-        bg=PAPER,
-        fg="#252c27",
-        font=("Georgia", 30),
-    ).pack(anchor="w", pady=(9, 4))
+        bg=THEME.paper,
+        fg=THEME.welcome_title,
+        font=THEME.font_title,
+    ).pack(anchor="w", pady=THEME.layout.welcome_title_padding)
     tk.Label(
         parent,
         text="Registre o que você aprende. Encontre conexões com o tempo.",
-        bg=PAPER,
-        fg=MUTED,
-        font=("Arial", 10),
+        bg=THEME.paper,
+        fg=THEME.muted,
+        font=THEME.font_body,
     ).pack(anchor="w")
 
 
 def build_summary(parent: tk.Widget, app: CadernoApp) -> None:
-    summary = tk.Frame(parent, bg=PAPER)
-    summary.pack(fill="x", pady=(27, 23))
+    summary = tk.Frame(parent, bg=THEME.paper)
+    summary.pack(fill="x", pady=THEME.layout.summary_vertical_padding)
     app.summary_values = []
     for value, label in (("0", "textos no caderno"), ("0", "coleções"), ("0", "adicionados esta semana")):
-        block = tk.Frame(summary, bg=PAPER)
+        block = tk.Frame(summary, bg=THEME.paper)
         block.pack(side="left", padx=(0, 38))
         value_label = tk.Label(
-            block, text=value, bg=PAPER, fg=INK, font=("Georgia", 16)
+            block, text=value, bg=THEME.paper, fg=THEME.ink, font=THEME.font_summary
         )
         value_label.pack(anchor="w")
         app.summary_values.append(value_label)
         tk.Label(
-            block, text=label, bg=PAPER, fg=MUTED, font=("Arial", 8)
+            block, text=label, bg=THEME.paper, fg=THEME.muted, font=THEME.font_tiny
         ).pack(anchor="w")
 
 
 def build_search(parent: tk.Widget) -> None:
-    row = tk.Frame(parent, bg=PAPER)
-    row.pack(fill="x", pady=(0, 18))
+    row = tk.Frame(parent, bg=THEME.paper)
+    row.pack(fill="x", pady=(0, THEME.layout.search_bottom_padding))
     search = tk.Entry(
         row,
         relief="flat",
-        bg=PANEL,
-        fg=MUTED,
-        disabledbackground=PANEL,
-        disabledforeground=MUTED,
-        insertbackground=GREEN,
-        highlightbackground=FIELD_BORDER,
-        highlightcolor=GREEN,
-        highlightthickness=1,
-        font=("Arial", 10),
+        bg=THEME.panel,
+        fg=THEME.muted,
+        disabledbackground=THEME.panel,
+        disabledforeground=THEME.muted,
+        insertbackground=THEME.green,
+        highlightbackground=THEME.field_border,
+        highlightcolor=THEME.green,
+        highlightthickness=THEME.layout.highlight_thickness,
+        font=THEME.font_body,
     )
     search.insert(0, "⌕   Buscar por título, tema ou conteúdo…")
     search.configure(state="disabled")
-    search.pack(side="left", fill="x", expand=True, ipady=10, padx=(0, 12))
+    search.pack(
+        side="left", fill="x", expand=True, ipady=THEME.layout.search_vertical_padding,
+        padx=(0, THEME.layout.search_gap),
+    )
     make_button(
-        row, "Ordenar: última edição  ▾", PANEL, MUTED, pady=9, state="disabled"
+        row, "Ordenar: última edição  ▾", "secondary", pady=9, state="disabled"
     ).pack(side="right")
 
 
 def build_empty_state(parent: tk.Widget, app: CadernoApp) -> None:
     box = tk.Frame(
         parent,
-        bg=STATE_PANEL,
-        highlightbackground="#dcdcd3",
-        highlightthickness=1,
-        padx=20,
-        pady=34,
+        bg=THEME.state_panel,
+        highlightbackground=THEME.empty_state_border,
+        highlightthickness=THEME.layout.highlight_thickness,
+        padx=THEME.layout.state_horizontal_padding,
+        pady=THEME.layout.state_vertical_padding,
     )
     box.pack(fill="both", expand=True)
     app.state_area = box
 
 
 def make_button(
-    parent: tk.Widget, label: str, background: str, foreground: str, pady: int,
-    command=None, state="normal", variant="default",
+    parent: tk.Widget, label: str, variant: ButtonVariant, pady: int,
+    command=None, state="normal",
 ) -> tk.Button:
-    active_background = GREEN
-    active_foreground = "white"
-    focus_color = GREEN
-    if variant == "primary":
-        background, foreground = PRIMARY_BUTTON, "white"
-        focus_color = FOCUS_ON_PRIMARY
-    elif variant == "secondary":
-        background, foreground = SECONDARY_BUTTON, INK
-        active_background, active_foreground = SECONDARY_ACTIVE, INK
+    styles = {
+        "primary": THEME.primary_button,
+        "secondary": THEME.secondary_button,
+    }
+    try:
+        style = styles[variant]
+    except KeyError as error:
+        raise ValueError(f"Variante de botão desconhecida: {variant}") from error
     if state == "disabled":
-        background = DISABLED_BUTTON
-        foreground = MUTED
-        active_background, active_foreground = background, foreground
+        style = THEME.disabled_button
     return tk.Button(
         parent,
         text=label,
-        bg=background,
-        fg=foreground,
-        activebackground=active_background,
-        activeforeground=active_foreground,
-        disabledforeground=foreground,
-        highlightbackground=background,
-        highlightcolor=focus_color,
-        highlightthickness=1,
+        bg=style.background,
+        fg=style.foreground,
+        activebackground=style.active_background,
+        activeforeground=style.active_foreground,
+        disabledforeground=style.foreground,
+        highlightbackground=style.background,
+        highlightcolor=style.focus,
+        highlightthickness=THEME.layout.highlight_thickness,
         relief="flat",
         borderwidth=0,
-        padx=12,
+        padx=THEME.layout.button_horizontal_padding,
         pady=pady,
-        font=("Arial", 9, "bold"),
+        font=THEME.font_button,
         cursor="arrow" if state == "disabled" else "hand2",
         command=command,
         state=state,

@@ -13,36 +13,40 @@ def contrast_ratio(first, second):
 
 
 def test_small_text_palette_meets_wcag_aa_contrast_on_its_backgrounds():
+    theme = ui.THEME
     pairs = (
-        (ui.MUTED, ui.PAPER),
-        (ui.MUTED, ui.SIDEBAR),
-        (ui.MUTED, ui.PANEL),
-        (ui.MUTED, ui.STATE_PANEL),
-        (ui.MUTED, ui.DISABLED_BUTTON),
-        (ui.SAGE, ui.PAPER),
-        ("#ffffff", ui.PRIMARY_BUTTON),
-        (ui.INK, ui.SECONDARY_BUTTON),
-        (ui.INK, ui.SECONDARY_ACTIVE),
-        ("#ffffff", ui.GREEN),
-        ("#5b655c", ui.SIDEBAR),
-        ("#273b30", "#e4e5dd"),
-        ("#252c27", ui.PAPER),
-        ("#38453b", ui.STATE_PANEL),
-        ("#f6f3e9", ui.GREEN),
-        ("#ffffff", ui.GREEN),
+        (theme.muted, theme.paper),
+        (theme.muted, theme.sidebar),
+        (theme.muted, theme.panel),
+        (theme.muted, theme.state_panel),
+        (theme.muted, theme.disabled_button.background),
+        (theme.sage, theme.paper),
+        (theme.primary_button.foreground, theme.primary_button.background),
+        (theme.primary_button.active_foreground, theme.primary_button.active_background),
+        (theme.secondary_button.foreground, theme.secondary_button.background),
+        (theme.secondary_button.active_foreground, theme.secondary_button.active_background),
+        (theme.locked_status, theme.sidebar),
+        (theme.selected_navigation_foreground, theme.selected_navigation_background),
+        (theme.welcome_title, theme.paper),
+        (theme.state_title, theme.state_panel),
+        (theme.brand_mark_foreground, theme.green),
+        (theme.primary_button.focus, theme.primary_button.active_background),
     )
 
     for foreground, background in pairs:
         assert contrast_ratio(foreground, background) >= 4.5, (foreground, background)
+    assert theme.primary_button.foreground == theme.ink
+    assert theme.primary_button.active_foreground == theme.ink
 
 
 def test_control_boundaries_and_selected_navigation_indicator_are_distinguishable():
-    assert contrast_ratio(ui.FIELD_BORDER, ui.PANEL) >= 3
-    assert contrast_ratio(ui.FIELD_BORDER, ui.PAPER) >= 3
-    assert contrast_ratio(ui.GREEN, ui.SIDEBAR) >= 3
-    assert contrast_ratio("#6d826f", "#f1f2ec") >= 3
-    assert contrast_ratio(ui.FOCUS_ON_PRIMARY, ui.GREEN) >= 3
-    assert contrast_ratio(ui.GREEN, ui.PANEL) >= 3
+    theme = ui.THEME
+    assert contrast_ratio(theme.field_border, theme.panel) >= 3
+    assert contrast_ratio(theme.field_border, theme.paper) >= 3
+    assert contrast_ratio(theme.green, theme.sidebar) >= 3
+    assert contrast_ratio(theme.state_icon_foreground, theme.state_icon_background) >= 3
+    assert contrast_ratio(theme.primary_button.focus, theme.primary_button.active_background) >= 3
+    assert contrast_ratio(theme.green, theme.panel) >= 3
 
 
 def test_create_and_close_vault_buttons_have_readable_normal_and_active_colors(monkeypatch):
@@ -53,16 +57,43 @@ def test_create_and_close_vault_buttons_have_readable_normal_and_active_colors(m
             configured.update(options)
 
     monkeypatch.setattr(ui.tk, "Button", FakeButton)
-    for variant, expected_background, expected_foreground, expected_active in (
-        ("primary", ui.PRIMARY_BUTTON, "white", ui.GREEN),
-        ("secondary", ui.SECONDARY_BUTTON, ui.INK, ui.SECONDARY_ACTIVE),
+    for variant, style in (
+        ("primary", ui.THEME.primary_button),
+        ("secondary", ui.THEME.secondary_button),
     ):
-        ui.make_button(None, "test", ui.GREEN, "white", pady=8, variant=variant)
-        assert configured["bg"] == expected_background
-        assert configured["fg"] == expected_foreground
-        assert configured["activebackground"] == expected_active
-        assert configured["activeforeground"] == expected_foreground
-        assert contrast_ratio(
-            "#ffffff" if expected_foreground == "white" else expected_foreground,
-            expected_active,
-        ) >= 4.5
+        ui.make_button(None, "test", variant, pady=8)
+        assert configured["bg"] == style.background
+        assert configured["fg"] == style.foreground
+        assert configured["activebackground"] == style.active_background
+        assert configured["activeforeground"] == style.active_foreground
+        assert configured["highlightcolor"] == style.focus
+        assert configured["disabledforeground"] == style.foreground
+        assert contrast_ratio(style.foreground, style.background) >= 4.5
+        assert contrast_ratio(style.active_foreground, style.active_background) >= 4.5
+
+
+def test_disabled_button_uses_the_shared_disabled_theme(monkeypatch):
+    configured = {}
+
+    class FakeButton:
+        def __init__(self, _parent, **options):
+            configured.update(options)
+
+    monkeypatch.setattr(ui.tk, "Button", FakeButton)
+    ui.make_button(None, "test", "primary", pady=8, state="disabled")
+
+    assert configured["bg"] == ui.THEME.disabled_button.background
+    assert configured["fg"] == ui.THEME.disabled_button.foreground
+    assert configured["activebackground"] == ui.THEME.disabled_button.active_background
+    assert configured["activeforeground"] == ui.THEME.disabled_button.active_foreground
+    assert configured["disabledforeground"] == ui.THEME.disabled_button.foreground
+    assert configured["highlightcolor"] == ui.THEME.disabled_button.focus
+
+
+def test_disabled_button_still_rejects_unknown_variant():
+    try:
+        ui.make_button(None, "test", "unknown", pady=8, state="disabled")
+    except ValueError as error:
+        assert "Variante de botão desconhecida" in str(error)
+    else:
+        raise AssertionError("A fábrica aceitou variante inexistente")
