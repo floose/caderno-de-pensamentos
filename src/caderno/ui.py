@@ -3,7 +3,7 @@ import tkinter as tk
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from tkinter import filedialog, font, messagebox, simpledialog
+from tkinter import filedialog, font, messagebox
 from typing import Literal
 
 if __package__:
@@ -53,6 +53,9 @@ class UILayout:
     state_action_padding: int
     welcome_title_padding: tuple
     summary_vertical_padding: tuple
+    password_dialog_size: tuple
+    password_dialog_padding: int
+    password_prompt_wrap: int
 
 
 @dataclass(frozen=True)
@@ -156,8 +159,101 @@ THEME = UITheme(
         state_description_wrap=480, state_icon_bottom_padding=10,
         state_description_padding=(7, 15), state_action_padding=3,
         welcome_title_padding=(9, 4), summary_vertical_padding=(27, 23),
+        password_dialog_size=(480, 300), password_dialog_padding=24,
+        password_prompt_wrap=380,
     ),
 )
+
+
+class PasswordDialog:
+    """Diálogo modal de senha com os mesmos tokens visuais da janela principal."""
+
+    def __init__(self, parent, title: str, prompt: str, submit_label: str):
+        self.result = None
+        self.window = tk.Toplevel(parent)
+        self.window.withdraw()
+        self.window.title(title)
+        self.window.configure(bg=THEME.paper)
+        self.window.resizable(False, False)
+        self.window.transient(parent)
+        self._build_content(prompt, submit_label)
+        self.window.bind("<Return>", self._submit_event)
+        self.window.bind("<Escape>", self._cancel_event)
+        self.window.protocol("WM_DELETE_WINDOW", self.cancel)
+        self._center_on_parent(parent)
+        self.window.deiconify()
+        self.window.grab_set()
+        self.window.after_idle(self.password_entry.focus_set)
+
+    def _build_content(self, prompt: str, submit_label: str):
+        layout = THEME.layout
+        self.window.geometry(f"{layout.password_dialog_size[0]}x{layout.password_dialog_size[1]}")
+        panel = tk.Frame(self.window, bg=THEME.state_panel, padx=layout.password_dialog_padding)
+        panel.pack(fill="both", expand=True, padx=18, pady=18)
+        tk.Label(
+            panel, text=self.window.title(), bg=THEME.state_panel,
+            fg=THEME.state_title, font=THEME.font_heading,
+        ).pack(anchor="w", pady=(0, 8))
+        tk.Label(
+            panel, text=prompt, bg=THEME.state_panel, fg=THEME.muted,
+            font=THEME.font_body, wraplength=layout.password_prompt_wrap, justify="left",
+        ).pack(anchor="w", pady=(0, 18))
+        tk.Label(
+            panel, text="Senha", bg=THEME.state_panel,
+            fg=THEME.ink, font=THEME.font_label,
+        ).pack(anchor="w", pady=(0, 5))
+        self.password_entry = tk.Entry(
+            panel, show="•", bg=THEME.panel, fg=THEME.ink,
+            insertbackground=THEME.green, highlightbackground=THEME.field_border,
+            highlightcolor=THEME.green, highlightthickness=THEME.layout.highlight_thickness,
+            relief="flat", font=THEME.font_body,
+        )
+        self.password_entry.pack(fill="x", ipady=7)
+        self._build_actions(panel, submit_label)
+
+    def _build_actions(self, parent, submit_label: str):
+        actions = tk.Frame(parent, bg=THEME.state_panel)
+        actions.pack(fill="x", pady=(22, 0))
+        actions.columnconfigure(0, weight=1)
+        cancel_button = make_button(
+            actions, "Cancelar", "secondary", pady=8, command=self.cancel,
+        )
+        submit_button = make_button(
+            actions, submit_label, "primary", pady=8, command=self.submit,
+        )
+        cancel_button.grid(row=0, column=0, sticky="e", padx=(0, 8))
+        submit_button.grid(row=0, column=1, sticky="e")
+        cancel_button.bind("<Return>", self._submit_event)
+        submit_button.bind("<Return>", self._submit_event)
+
+    def _center_on_parent(self, parent):
+        self.window.update_idletasks()
+        width, height = THEME.layout.password_dialog_size
+        x = parent.winfo_rootx() + max((parent.winfo_width() - width) // 2, 0)
+        y = parent.winfo_rooty() + max((parent.winfo_height() - height) // 2, 0)
+        self.window.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _submit_event(self, _event=None):
+        self.submit()
+        return "break"
+
+    def _cancel_event(self, _event=None):
+        self.cancel()
+        return "break"
+
+    def submit(self):
+        self.result = self.password_entry.get()
+        self.window.destroy()
+
+    def cancel(self):
+        self.window.destroy()
+
+
+def ask_password(parent, title: str, prompt: str, submit_label: str) -> str | None:
+    """Mostra o diálogo modal de senha e devolve o valor ou None ao cancelar."""
+    dialog = PasswordDialog(parent, title, prompt, submit_label)
+    parent.wait_window(dialog.window)
+    return dialog.result
 
 
 class CadernoApp:
@@ -177,7 +273,14 @@ class CadernoApp:
         build_sidebar(shell, self)
         build_main_panel(shell, self)
         self.show_locked()
-        self.restore_last_vault()
+        self._restore_binding = root.bind("<Map>", self._restore_after_map, add="+")
+
+    def _restore_after_map(self, event):
+        """Só inicia a restauração depois que a janela principal foi mapeada."""
+        if event.widget is not self.root:
+            return
+        self.root.unbind("<Map>", self._restore_binding)
+        self.root.after_idle(self.restore_last_vault)
 
     def create(self):
         """Pede destino e senha, cria cofre vazio e só então lembra o caminho."""
@@ -197,11 +300,11 @@ class CadernoApp:
                 parent=self.root,
             )
             return
-        password = simpledialog.askstring("Criar base", "Escolha uma senha:", show="•", parent=self.root)
+        password = ask_password(self.root, "Criar base", "Escolha uma senha para esta base.", "Continuar")
         if password is None:
             return
-        confirmation = simpledialog.askstring(
-            "Confirmar senha", "Digite a senha novamente:", show="•", parent=self.root
+        confirmation = ask_password(
+            self.root, "Confirmar senha", "Digite a senha novamente para confirmar.", "Confirmar"
         )
         if confirmation is None:
             return
@@ -254,7 +357,7 @@ class CadernoApp:
                 parent=self.root,
             )
             return
-        password = simpledialog.askstring("Abrir base", "Digite a senha da base:", show="•", parent=self.root)
+        password = ask_password(self.root, "Abrir base", "Digite a senha desta base para desbloqueá-la.", "Abrir base")
         if password is None:
             return
         try:

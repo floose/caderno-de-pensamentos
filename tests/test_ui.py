@@ -13,6 +13,166 @@ def bare_app():
     return app
 
 
+class FakeDialogWidget:
+    def __init__(self, *_args, **options):
+        self.options = options
+        self.bindings = {}
+
+    def pack(self, **_kwargs):
+        pass
+
+    def grid(self, **_kwargs):
+        pass
+
+    def columnconfigure(self, *_args, **_kwargs):
+        pass
+
+    def bind(self, event, callback):
+        self.bindings[event] = callback
+
+    def focus_set(self):
+        pass
+
+    def get(self):
+        return "synthetic password"
+
+
+class FakePasswordWindow(FakeDialogWidget):
+    def __init__(self, *_args, **options):
+        super().__init__(**options)
+        self._title = ""
+        self.bindings = {}
+        self.protocols = {}
+        self.lifecycle = []
+
+    def title(self, value=None):
+        if value is not None:
+            self._title = value
+        return self._title
+
+    def configure(self, **_kwargs):
+        pass
+
+    def resizable(self, *_args):
+        pass
+
+    def transient(self, *_args):
+        pass
+
+    def protocol(self, event, callback):
+        self.protocols[event] = callback
+
+    def update_idletasks(self):
+        pass
+
+    def geometry(self, value):
+        self.geometry_value = value
+
+    def deiconify(self):
+        self.lifecycle.append("show")
+
+    def wait_visibility(self):
+        self.lifecycle.append("visible")
+
+    def after_idle(self, callback):
+        self.lifecycle.append("focus_scheduled")
+        self.focus_callback = callback
+
+    def grab_set(self):
+        self.lifecycle.append("grab")
+
+    def withdraw(self):
+        pass
+
+    def destroy(self):
+        self.destroyed = True
+
+
+class FakePasswordEntry(FakeDialogWidget):
+    pass
+
+
+class FakePasswordParent:
+    def winfo_rootx(self):
+        return 100
+
+    def winfo_rooty(self):
+        return 200
+
+    def winfo_width(self):
+        return 1180
+
+    def winfo_height(self):
+        return 760
+
+    def wait_window(self, window):
+        self.waited_window = window
+
+
+def install_dialog_widgets(monkeypatch):
+    monkeypatch.setattr(ui.tk, "Toplevel", FakePasswordWindow)
+    monkeypatch.setattr(ui.tk, "Frame", FakeDialogWidget)
+    monkeypatch.setattr(ui.tk, "Label", FakeDialogWidget)
+    monkeypatch.setattr(ui.tk, "Entry", FakePasswordEntry)
+
+
+def test_password_dialog_uses_masked_theme_field_and_styled_actions(monkeypatch):
+    install_dialog_widgets(monkeypatch)
+    buttons = []
+    make_button = Mock(side_effect=lambda *args, **kwargs: buttons.append(FakeDialogWidget()) or buttons[-1])
+    monkeypatch.setattr(ui, "make_button", make_button)
+
+    dialog = ui.PasswordDialog(FakePasswordParent(), "Abrir base", "Digite a senha.", "Abrir")
+
+    assert dialog.password_entry.options["show"] == "•"
+    assert dialog.password_entry.options["bg"] == ui.THEME.panel
+    assert dialog.password_entry.options["font"] == ui.THEME.font_body
+    assert [call.args[1:3] for call in make_button.call_args_list] == [
+        ("Cancelar", "secondary"), ("Abrir", "primary")
+    ]
+    assert dialog.window.geometry_value == "480x300+450+430"
+    assert dialog.window.lifecycle == ["show", "grab", "focus_scheduled"]
+    buttons[0].bindings["<Return>"](None)
+    assert dialog.result == "synthetic password"
+    assert dialog.window.destroyed
+
+
+def test_password_dialog_escape_and_window_close_cancel_without_value(monkeypatch):
+    install_dialog_widgets(monkeypatch)
+    monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
+    escaped = ui.PasswordDialog(FakePasswordParent(), "Abrir", "Senha", "Abrir")
+    escaped.window.bindings["<Escape>"](None)
+    assert escaped.result is None and escaped.window.destroyed
+
+    closed = ui.PasswordDialog(FakePasswordParent(), "Abrir", "Senha", "Abrir")
+    closed.window.protocols["WM_DELETE_WINDOW"]()
+    assert closed.result is None and closed.window.destroyed
+
+
+def test_ask_password_waits_for_dialog_and_returns_cancel_value(monkeypatch):
+    dialog = Mock(window=object(), result=None)
+    monkeypatch.setattr(ui, "PasswordDialog", Mock(return_value=dialog))
+    parent = FakePasswordParent()
+
+    result = ui.ask_password(parent, "Abrir", "Digite a senha", "Abrir")
+
+    assert result is None
+    assert parent.waited_window is dialog.window
+
+
+def test_last_vault_restore_waits_until_main_window_is_mapped():
+    root = Mock()
+    app = type("App", (), {"root": root, "_restore_binding": "binding-1", "restore_last_vault": Mock()})()
+
+    ui.CadernoApp._restore_after_map(app, type("Event", (), {"widget": object()})())
+    root.unbind.assert_not_called()
+
+    ui.CadernoApp._restore_after_map(app, type("Event", (), {"widget": root})())
+
+    root.unbind.assert_called_once_with("<Map>", "binding-1")
+    root.after_idle.assert_called_once_with(app.restore_last_vault)
+
+
 def test_create_activates_and_remembers_only_after_password_confirmation(tmp_path, monkeypatch):
     app = bare_app()
     monkeypatch.delenv("CADERNO_CONFIG_DIR", raising=False)
@@ -20,13 +180,18 @@ def test_create_activates_and_remembers_only_after_password_confirmation(tmp_pat
     session = object()
     monkeypatch.setattr(ui.filedialog, "asksaveasfilename", lambda **kwargs: str(target))
     answers = iter(("passphrase", "passphrase"))
-    monkeypatch.setattr(ui.simpledialog, "askstring", lambda *args, **kwargs: next(answers))
+    ask_password = Mock(side_effect=lambda *_args: next(answers))
+    monkeypatch.setattr(ui, "ask_password", ask_password)
     create = Mock(return_value=session)
     monkeypatch.setattr(ui, "create_vault", create)
     monkeypatch.setattr(ui.messagebox, "showerror", Mock())
 
     app.create()
 
+    assert [call.args[1:] for call in ask_password.call_args_list] == [
+        ("Criar base", "Escolha uma senha para esta base.", "Continuar"),
+        ("Confirmar senha", "Digite a senha novamente para confirmar.", "Confirmar"),
+    ]
     create.assert_called_once()
     app._activate.assert_called_once_with(session)
     app._remember_path.assert_called_once_with(Path(target))
@@ -36,7 +201,7 @@ def test_create_with_mismatched_password_does_not_create_or_remember(monkeypatch
     app = bare_app()
     monkeypatch.setattr(ui.filedialog, "asksaveasfilename", lambda **kwargs: "/tmp/new.cpv")
     answers = iter(("first", "second"))
-    monkeypatch.setattr(ui.simpledialog, "askstring", lambda *args, **kwargs: next(answers))
+    monkeypatch.setattr(ui, "ask_password", lambda *_args: next(answers))
     create = Mock()
     monkeypatch.setattr(ui, "create_vault", create)
     monkeypatch.setattr(ui.messagebox, "showerror", Mock())
@@ -53,12 +218,16 @@ def test_unlock_success_activates_and_remembers_path(tmp_path, monkeypatch):
     monkeypatch.delenv("CADERNO_CONFIG_DIR", raising=False)
     path = tmp_path / "existing.cpv"
     session = object()
-    monkeypatch.setattr(ui.simpledialog, "askstring", lambda *args, **kwargs: "passphrase")
+    ask_password = Mock(return_value="passphrase")
+    monkeypatch.setattr(ui, "ask_password", ask_password)
     open_file = Mock(return_value=session)
     monkeypatch.setattr(ui, "open_vault", open_file)
 
     app.unlock(path)
 
+    ask_password.assert_called_once_with(
+        app.root, "Abrir base", "Digite a senha desta base para desbloqueá-la.", "Abrir base"
+    )
     open_file.assert_called_once_with(path, "passphrase")
     app._activate.assert_called_once_with(session)
     app._remember_path.assert_called_once_with(path)
@@ -69,7 +238,7 @@ def test_unlock_failure_keeps_current_session_and_does_not_remember(monkeypatch)
     monkeypatch.delenv("CADERNO_CONFIG_DIR", raising=False)
     original_session = object()
     app.session = original_session
-    monkeypatch.setattr(ui.simpledialog, "askstring", lambda *args, **kwargs: "wrong")
+    monkeypatch.setattr(ui, "ask_password", lambda *_args: "wrong")
     monkeypatch.setattr(ui, "open_vault", Mock(side_effect=ValueError("secret detail")))
     showerror = Mock()
     monkeypatch.setattr(ui.messagebox, "showerror", showerror)
@@ -187,7 +356,7 @@ def test_create_rejects_destination_outside_isolated_test_profile(tmp_path, monk
     monkeypatch.setenv("CADERNO_UI_TEST_PROFILE", str(profile))
     monkeypatch.setattr(ui.filedialog, "asksaveasfilename", lambda **kwargs: str(tmp_path / "real-vault.cpv"))
     password_prompt = Mock()
-    monkeypatch.setattr(ui.simpledialog, "askstring", password_prompt)
+    monkeypatch.setattr(ui, "ask_password", password_prompt)
     create = Mock()
     monkeypatch.setattr(ui, "create_vault", create)
     showerror = Mock()
@@ -206,7 +375,7 @@ def test_preferences_override_alone_does_not_restrict_vault_opening(tmp_path, mo
     monkeypatch.setenv("CADERNO_CONFIG_DIR", str(tmp_path / "preferences"))
     monkeypatch.delenv("CADERNO_UI_TEST_PROFILE", raising=False)
     session = object()
-    monkeypatch.setattr(ui.simpledialog, "askstring", lambda *args, **kwargs: "passphrase")
+    monkeypatch.setattr(ui, "ask_password", lambda *_args: "passphrase")
     open_file = Mock(return_value=session)
     monkeypatch.setattr(ui, "open_vault", open_file)
 

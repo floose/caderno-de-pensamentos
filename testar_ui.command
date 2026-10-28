@@ -26,8 +26,8 @@ if [ ! -x "$PYTHON_BIN" ]; then
     fail 'Não encontrei o ambiente Python em .venv. Crie-o e instale requirements.txt antes de executar.'
 fi
 
-if ! "$PYTHON_BIN" -c 'import tkinter, nacl, pytest' >/dev/null 2>&1; then
-    fail 'Faltam dependências no .venv (Tkinter, PyNaCl ou pytest).'
+if ! "$PYTHON_BIN" -c 'import tkinter, nacl, pytest, PIL' >/dev/null 2>&1; then
+    fail 'Faltam dependências no .venv (Tkinter, PyNaCl, Pillow ou pytest).'
 fi
 
 APP_UID=$(id -u)

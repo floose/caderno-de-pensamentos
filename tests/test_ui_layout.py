@@ -139,3 +139,32 @@ def test_unlocked_state_fits_minimum_window_height():
 
     assert empty_state_height > 0
     assert required_state_height <= empty_state_height
+
+
+def test_password_dialog_text_and_actions_fit_its_theme_geometry():
+    theme = ui.THEME
+    layout = theme.layout
+    dialog_width, dialog_height = layout.password_dialog_size
+    content_width = dialog_width - 2 * (18 + layout.password_dialog_padding)
+    content_height = dialog_height - 2 * 18
+    action_width = sum(
+        _text_width(theme.font_button, label)
+        + 2 * layout.button_horizontal_padding
+        + 2 * layout.highlight_thickness
+        for label in ("Cancelar", "Continuar")
+    ) + 8
+    prompt = "Digite a senha desta base para desbloqueá-la."
+    required_height = (
+        _text_height(theme.font_heading, "Confirmar senha") + 8
+        + _wrapped_line_count(theme.font_body, prompt, layout.password_prompt_wrap)
+        * _text_height(theme.font_body) + 18
+        + _text_height(theme.font_label) + 5
+        + _text_height(theme.font_body) + 14
+        + _text_height(theme.font_button) + 2 * 8
+        + 2 * layout.highlight_thickness + 22
+    )
+
+    assert layout.password_prompt_wrap <= content_width
+    assert _text_width(theme.font_heading, "Confirmar senha") <= content_width
+    assert action_width <= content_width
+    assert required_height <= content_height

@@ -80,7 +80,7 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 
 ### 5. Testar e proteger os dados
 
-- [x] Criar testes automatizados do núcleo para criptografia, schema, persistência, senha e integridade do arquivo; 48 testes passaram no runtime Python testado.
+- [x] Criar testes automatizados do núcleo para criptografia, schema, persistência, senha e integridade do arquivo; resultados atuais e lacunas estão em [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
 - [ ] Criar testes de integração da UI e regressão para operações de texto/imagem no `.app`.
 - [ ] Criar testes de regressão para operações de texto, imagens, backup e migração.
 - [x] Testar no núcleo falha pré-replace, retry e erro simulado de `fsync` do diretório.
@@ -133,6 +133,8 @@ Na raiz do projeto, dê duplo clique em [`testar_ui.command`](testar_ui.command)
 
 O script usa o Python de `.venv` e mantém um perfil de teste sintético em `/private/tmp`, separado das preferências normais; ele cria e protege a própria subpasta do aplicativo com permissão `0700`, sem alterar a permissão da pasta indicada pelo ambiente. Define `CADERNO_CONFIG_DIR` para isolar preferências e `CADERNO_UI_TEST_PROFILE` para ativar a restrição de criar/abrir cofres dentro do perfil. O perfil persiste entre execuções para testar a lembrança da última base; os diálogos começam nessa pasta e a UI rejeita caminhos externos enquanto esse modo estiver ativo. Essa é uma proteção contra seleção acidental de arquivos reais, não uma sandbox contra hard links criados deliberadamente. Na primeira execução, escolha **Criar base**, salve `teste.cpv` na pasta sugerida e digite/confirme uma senha. Os botões principais devem ter texto escuro sobre verde-claro. Depois de abrir o cofre, **Fechar base** e **Escolher outra base** devem aparecer com texto escuro sobre um fundo neutro claro, inclusive ao passar o ponteiro. Confirme que os textos permanecem inteiros ao redimensionar a janela até o mínimo de 900 × 620; confira título, busca, navegação e botões. O texto do botão desativado **Novo texto** deve continuar legível. Use `Tab` para percorrer os botões e conferir o indicador de foco.
 
+Nos prompts de senha, confira o campo mascarado e os botões **Cancelar** e de ação (**Continuar**, **Confirmar** ou **Abrir base**), com o mesmo tema da janela principal. **Enter** confirma e **Escape** cancela.
+
 Use **Fechar base**, tente abrir com uma senha incorreta e confirme que aparece um erro genérico e a base continua fechada. Repita com a senha correta. Feche o app e dê duplo clique no script outra vez: ele deve encontrar a última base e pedir a senha. Para um arquivo inválido, crie um arquivo de texto na pasta de teste e selecione-o pelo filtro **Todos os arquivos**; a mensagem de erro deve aparecer sem fechar a janela. O diretório usado é exibido no Terminal; não contém dados pessoais e pode ser removido pelo Finder após fechar o aplicativo.
 
 Toda nova tela ou teste de UI deve ser conectado a este ponto único. Os callbacks Tkinter e o backend CPV1 real já passaram por um smoke test automatizado; a validação visual do `.app` empacotado continua pendente.
@@ -169,7 +171,7 @@ Legenda: ██ trabalho previsto; .. sem atividade prevista.
 ## Acompanhamento
 
 - **Estado atual:** primeira versão restrita a Apple Silicon (`arm64`), macOS 14 Sonoma ou posterior, Tkinter e distribuição inicial para uso próprio/testes.
-- **Estado da UI:** a janela Tkinter já permite criar, escolher, abrir e fechar uma base pela fachada `caderno.vault`. O aplicativo lembra somente o caminho em preferências locais; senha e chave permanecem fora delas. Há testes unitários de UI e preferências locais; a edição de notas e a validação da janela real no `.app` ainda não foram implementadas.
-- **Estado do cofre:** CPV1 é um protótipo isolado; 48 testes do núcleo passaram com PyNaCl real e fixtures sintéticas, e o agente cético revisou a cobertura sem achar bloqueadores críticos/altos. A validação do `.app` e a integração com a UI continuam pendentes. Consulte [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
-- **Próximo marco:** conectar a criação e edição da primeira nota com persistência no cofre; em paralelo, preparar a prova `.app` arm64. O ciclo de abrir/criar/fechar tem testes unitários, mas ainda precisa de validação manual na janela empacotada. O processo e a sequência estão documentados em “Processo de desenvolvimento da UI e das funcionalidades”.
-- **Atualizado em:** 2026-10-27.
+- **Estado da UI:** criar, escolher, abrir e fechar base já estão implementados. A janela usa a fachada `caderno.vault` e salva apenas o último caminho nas preferências; notas ainda não podem ser editadas pela UI. O launcher e o roteiro estão em [`testar_ui.command`](testar_ui.command).
+- **Estado do cofre:** protótipo CPV1 isolado, testado com backend PyNaCl e fixtures sintéticas. Resultados e pendências atuais estão em [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
+- **Próximo marco:** conferir visualmente o diálogo de senha e o layout no tamanho mínimo; depois implementar a fatia de listar, criar, editar, salvar e reabrir notas. Em paralelo, preparar a prova `.app` arm64.
+- **Atualizado em:** 2026-10-28.
