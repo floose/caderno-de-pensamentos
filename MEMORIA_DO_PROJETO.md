@@ -24,17 +24,16 @@ Cada documento deve manter os detalhes da sua área; evite copiá-los para esta 
 ## Retomada — 2026-10-28
 
 - Branch atual: `feature/ui-vault-integration`, baseada em `feature/vault-encryption`; `main` permanece preservada.
-- Commits recentes: `78cabfa` centraliza o tema e ajusta layout; `b6760f2` corrige contraste e adiciona o launcher; `1678e5d` inicia os testes de fluxos do cofre.
-- Há alterações locais não commitadas em `MEMORIA_DO_PROJETO.md`, `Plano_do_projeto.md`, `src/caderno/ui.py`, `testar_ui.command`, `tests/test_ui.py` e `tests/test_ui_layout.py`. Preservá-las.
-- A UI já cria, seleciona, abre e fecha bases. Tema, tipografia e diálogo de senha estão sendo ajustados; o diálogo usa campo mascarado, ações tematizadas, Enter para confirmar e Escape para cancelar.
+- Commit recente: `beb4f20` estabiliza a restauração inicial e o diálogo de senha. As alterações atuais da primeira fatia de notas estão locais e sem commit.
+- A UI cria, seleciona, abre e fecha bases; também lista, cria e edita notas com rascunho local e salvamento explícito. O editor oferece `⌘S`; o diálogo de alterações oferece salvar, descartar e cancelar por botão, com `⌘S`, `⌘⌫` e `Escape`.
 - Execute `./testar_ui.command` (ou abra o arquivo pelo Finder) para rodar os testes focados e iniciar a janela com um perfil sintético isolado em `/private/tmp`. Não use arquivos pessoais nesse perfil.
-- Validações: suíte completa, 77 testes aprovados; suíte focada de UI, 30 aprovados após a correção da inicialização; `git diff --check` aprovado. A janela real voltou a abrir e responder no launcher, confirmado manualmente. Resta conferir o diálogo de senha e o encaixe visual no tamanho mínimo.
+- Validações desta fatia: suíte focada de UI, notas, preferências, contraste e layout: 53 aprovados; mais 5 testes centrais de persistência, senha, falha pré-replace, durabilidade e conflito aprovados. Inclui ciclo real com PyNaCl, PNG sintético preservado, acesso com senha correta/incorreta e conflito entre sessões; `sh -n testar_ui.command` e `git diff --check` aprovados. A revisão cética não encontrou bloqueadores após corrigir o fechamento com widgets descartados. O launcher abriu a janela real no perfil sintético; ainda falta conferir manualmente os atalhos e o tamanho mínimo.
 - O cofre CPV1 tem backend real com PyNaCl/libsodium e fixtures sintéticas. O ciclo e os limites criptográficos estão descritos nos documentos de referência. Ainda falta validar dependências, desempenho e ciclo integrado no `.app` arm64 antes de usar dados pessoais.
 
 ## Próximos passos
 
-1. Conferir visualmente o diálogo de senha, foco, cores e encaixe na janela mínima pelo launcher.
-2. Desenvolver a primeira fatia de notas: listar, criar, editar, salvar, fechar e reabrir usando a fachada `caderno.vault` e fixtures sintéticas.
-3. Preparar e validar uma prova `.app` arm64; só depois avançar para backup, integração completa e o gate de dados pessoais.
+1. Conferir na janela real o fluxo de notas, os atalhos e as decisões salvar/descartar/cancelar, inclusive em 900 × 620.
+2. Continuar com organização por coleções e hashtags, mantendo fixtures sintéticas e a fachada `caderno.vault`.
+3. Preparar e validar uma prova `.app` arm64 antes de avançar para backup, integração completa e o gate de dados pessoais.
 
 Não fazer commit até receber autorização explícita.

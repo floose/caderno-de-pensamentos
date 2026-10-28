@@ -50,7 +50,8 @@ unset CADERNO_UI_TEST_PROFILE 2>/dev/null || true
 
 printf 'Executando os testes automatizados da UI...\n'
 "$PYTHON_BIN" -m pytest -q \
-    tests/test_ui.py tests/test_preferences.py tests/test_ui_contrast.py tests/test_ui_layout.py
+    tests/test_ui.py tests/test_ui_notes.py tests/test_preferences.py \
+    tests/test_ui_contrast.py tests/test_ui_layout.py
 TEST_STATUS=$?
 if [ "$TEST_STATUS" -ne 0 ]; then
     printf 'Os testes da UI falharam; o aplicativo não será iniciado.\n'

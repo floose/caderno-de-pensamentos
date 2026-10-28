@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tkinter import filedialog, font, messagebox
 from typing import Literal
+from uuid import uuid4
 
 if __package__:
     from .preferences import load_last_vault, save_last_vault
@@ -56,6 +57,10 @@ class UILayout:
     password_dialog_size: tuple
     password_dialog_padding: int
     password_prompt_wrap: int
+    unsaved_dialog_size: tuple
+    unsaved_dialog_padding: int
+    notes_list_width: int
+    notes_list_gap: int
 
 
 @dataclass(frozen=True)
@@ -161,6 +166,8 @@ THEME = UITheme(
         welcome_title_padding=(9, 4), summary_vertical_padding=(27, 23),
         password_dialog_size=(480, 300), password_dialog_padding=24,
         password_prompt_wrap=380,
+        unsaved_dialog_size=(520, 220), unsaved_dialog_padding=24,
+        notes_list_width=190, notes_list_gap=18,
     ),
 )
 
@@ -256,12 +263,88 @@ def ask_password(parent, title: str, prompt: str, submit_label: str) -> str | No
     return dialog.result
 
 
+class UnsavedChangesDialog:
+    """Pede uma decisão explícita antes de descartar um rascunho alterado."""
+
+    def __init__(self, parent):
+        self.result = "cancel"
+        self.window = tk.Toplevel(parent)
+        self.window.withdraw()
+        self.window.title("Alterações não salvas")
+        self.window.configure(bg=THEME.paper)
+        self.window.resizable(False, False)
+        self.window.transient(parent)
+        width, height = THEME.layout.unsaved_dialog_size
+        self.window.geometry(f"{width}x{height}")
+        panel = tk.Frame(
+            self.window, bg=THEME.state_panel, padx=THEME.layout.unsaved_dialog_padding, pady=20,
+        )
+        panel.pack(fill="both", expand=True, padx=18, pady=18)
+        tk.Label(
+            panel, text="Este rascunho tem alterações.", bg=THEME.state_panel,
+            fg=THEME.state_title, font=THEME.font_heading,
+        ).pack(anchor="w", pady=(0, 8))
+        tk.Label(
+            panel, text="Salve antes de continuar ou descarte o que ainda não foi salvo.",
+            bg=THEME.state_panel, fg=THEME.muted, font=THEME.font_body,
+            wraplength=width - 2 * (18 + THEME.layout.unsaved_dialog_padding), justify="left",
+        ).pack(anchor="w")
+        self._build_actions(panel)
+        self.window.bind("<Return>", lambda _event: self.choose("save"))
+        self.window.bind("<Command-s>", lambda _event: self.choose("save"))
+        self.window.bind("<Escape>", lambda _event: self.choose("cancel"))
+        self.window.bind("<Command-BackSpace>", lambda _event: self.choose("discard"))
+        self.window.protocol("WM_DELETE_WINDOW", lambda: self.choose("cancel"))
+        self._center_on_parent(parent)
+        self.window.deiconify()
+        self.window.grab_set()
+        self.window.after_idle(self.save_button.focus_set)
+
+    def _build_actions(self, parent):
+        actions = tk.Frame(parent, bg=THEME.state_panel)
+        actions.pack(fill="x", pady=(24, 0))
+        actions.columnconfigure(0, weight=1)
+        self.save_button = make_button(
+            actions, "Salvar  ⌘S", "primary", pady=8, command=lambda: self.choose("save"),
+        )
+        discard_button = make_button(
+            actions, "Descartar  ⌘⌫", "secondary", pady=8, command=lambda: self.choose("discard"),
+        )
+        cancel_button = make_button(
+            actions, "Cancelar  Esc", "secondary", pady=8, command=lambda: self.choose("cancel"),
+        )
+        self.save_button.grid(row=0, column=0, sticky="e", padx=(0, 8))
+        discard_button.grid(row=0, column=1, sticky="e", padx=(0, 8))
+        cancel_button.grid(row=0, column=2, sticky="e")
+
+    def _center_on_parent(self, parent):
+        self.window.update_idletasks()
+        width, height = THEME.layout.unsaved_dialog_size
+        x = parent.winfo_rootx() + max((parent.winfo_width() - width) // 2, 0)
+        y = parent.winfo_rooty() + max((parent.winfo_height() - height) // 2, 0)
+        self.window.geometry(f"{width}x{height}+{x}+{y}")
+
+    def choose(self, result: str):
+        self.result = result
+        self.window.destroy()
+
+
+def ask_unsaved_changes(parent) -> str:
+    """Devolve save, discard ou cancel depois de uma escolha explícita."""
+    dialog = UnsavedChangesDialog(parent)
+    parent.wait_window(dialog.window)
+    return dialog.result
+
+
 class CadernoApp:
     """Coordena o ciclo de abertura e fechamento do cofre pela interface."""
 
     def __init__(self, root: tk.Tk):
         self.root = root
         self.session: VaultSession | None = None
+        self.active_entry_id = None
+        self.saved_title = ""
+        self.saved_body = ""
         root.title("Caderno de Pensamentos")
         root.geometry(f"{THEME.layout.window_size[0]}x{THEME.layout.window_size[1]}")
         root.minsize(*THEME.layout.minimum_window_size)
@@ -300,6 +383,11 @@ class CadernoApp:
                 parent=self.root,
             )
             return
+        if Path(target).exists():
+            messagebox.showerror(
+                "Não foi possível criar", "Já existe um arquivo nesse local.", parent=self.root,
+            )
+            return
         password = ask_password(self.root, "Criar base", "Escolha uma senha para esta base.", "Continuar")
         if password is None:
             return
@@ -310,6 +398,8 @@ class CadernoApp:
             return
         if not password or password != confirmation:
             messagebox.showerror("Não foi possível criar", "A senha está vazia ou as confirmações não coincidem.", parent=self.root)
+            return
+        if not self._confirm_pending_changes():
             return
         document = {
             "schema_version": 1,
@@ -357,6 +447,8 @@ class CadernoApp:
                 parent=self.root,
             )
             return
+        if self._is_current_vault(path):
+            return
         password = ask_password(self.root, "Abrir base", "Digite a senha desta base para desbloqueá-la.", "Abrir base")
         if password is None:
             return
@@ -369,8 +461,19 @@ class CadernoApp:
                 parent=self.root,
             )
             return
+        if not self._confirm_pending_changes():
+            session.close()
+            return
         self._activate(session)
         self._remember_path(path)
+
+    def _is_current_vault(self, path: Path) -> bool:
+        if self.session is None:
+            return False
+        try:
+            return Path(path).expanduser().resolve(strict=False) == self.session.path
+        except (AttributeError, OSError, RuntimeError):
+            return False
 
     @staticmethod
     def _path_allowed_in_test_profile(path: Path) -> bool:
@@ -397,11 +500,17 @@ class CadernoApp:
         if self.session is not None:
             self.session.close()
         self.session = session
+        self.active_entry_id = self._first_entry_id(session.snapshot.document)
         self.show_unlocked(session)
 
     def show_locked(self):
         self.status.configure(text="●  Nenhuma base aberta", fg=THEME.locked_status)
         self.status_detail.configure(text="Escolha ou crie uma base para começar")
+        self.title_entry = None
+        self.body_editor = None
+        self.new_entry_button.configure(state="disabled")
+        self.welcome_area.pack(fill="x", before=self.summary_area)
+        self.search_area.pack(fill="x", before=self.state_area)
         self.close_button.pack_forget()
         self.update_summary(None)
         self.render_state(
@@ -414,14 +523,250 @@ class CadernoApp:
     def show_unlocked(self, session: VaultSession):
         self.status.configure(text="●  Base aberta", fg=THEME.green)
         self.status_detail.configure(text=session.path.name)
+        self.new_entry_button.configure(state="normal")
+        self.welcome_area.pack_forget()
+        self.search_area.pack_forget()
         self.close_button.pack(fill="x", padx=8, pady=(8, 0))
         self.update_summary(session.snapshot.document)
-        self.render_state(
-            "Base desbloqueada.",
-            "O cofre está aberto. A edição de textos será conectada na próxima etapa.",
-            ("Escolher outra base", self.choose, "secondary"),
-            ("Fechar base", self.close_vault, "secondary"),
+        self.refresh_notes()
+
+    @staticmethod
+    def _first_entry_id(document):
+        entries = sorted(document["entries"], key=lambda entry: entry["updated_at"], reverse=True)
+        return entries[0]["id"] if entries else None
+
+    def refresh_notes(self):
+        """Renderiza a lista e o editor para o snapshot da sessão ativa."""
+        for child in self.state_area.winfo_children():
+            child.destroy()
+        layout = tk.Frame(self.state_area, bg=THEME.state_panel)
+        layout.pack(fill="both", expand=True)
+        list_panel = tk.Frame(layout, bg=THEME.state_panel, width=THEME.layout.notes_list_width)
+        list_panel.pack(side="left", fill="y", padx=(0, THEME.layout.notes_list_gap))
+        list_panel.pack_propagate(False)
+        tk.Label(
+            list_panel, text="NOTAS", bg=THEME.state_panel,
+            fg=THEME.muted, font=THEME.font_mono_small,
+        ).pack(anchor="w", pady=(0, 8))
+        self._render_note_list(list_panel)
+        self.editor_panel = tk.Frame(layout, bg=THEME.state_panel)
+        self.editor_panel.pack(side="left", fill="both", expand=True)
+        entry = self._active_entry()
+        self._render_note_editor(entry)
+
+    def _active_entry(self):
+        if self.session is None or self.active_entry_id is None:
+            return None
+        return next(
+            (entry for entry in self.session.snapshot.document["entries"]
+             if entry["id"] == self.active_entry_id),
+            None,
         )
+
+    def _render_note_list(self, parent):
+        listbox = tk.Listbox(
+            parent, bg=THEME.panel, fg=THEME.ink, selectbackground=THEME.selected_navigation_background,
+            selectforeground=THEME.selected_navigation_foreground, font=THEME.font_body,
+            relief="flat", highlightbackground=THEME.field_border,
+            highlightcolor=THEME.green, highlightthickness=THEME.layout.highlight_thickness,
+        )
+        scrollbar = tk.Scrollbar(parent, orient="vertical", command=listbox.yview)
+        listbox.configure(yscrollcommand=scrollbar.set)
+        listbox.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        entries = sorted(
+            self.session.snapshot.document["entries"],
+            key=lambda entry: entry["updated_at"], reverse=True,
+        )
+        self.note_entry_ids = []
+        for entry in entries:
+            listbox.insert("end", entry["title"])
+            self.note_entry_ids.append(entry["id"])
+        if self.active_entry_id in self.note_entry_ids:
+            index = self.note_entry_ids.index(self.active_entry_id)
+            listbox.selection_set(index)
+            listbox.see(index)
+        listbox.bind("<<ListboxSelect>>", self._select_list_entry)
+        self.note_list = listbox
+
+    def _render_note_editor(self, entry):
+        title = entry["title"] if entry else ""
+        body = entry["body_markdown"] if entry else ""
+        self.saved_title, self.saved_body = title, body
+        tk.Label(
+            self.editor_panel, text="Título", bg=THEME.state_panel,
+            fg=THEME.ink, font=THEME.font_label,
+        ).pack(anchor="w", pady=(0, 5))
+        self.title_entry = tk.Entry(
+            self.editor_panel, bg=THEME.panel, fg=THEME.ink,
+            insertbackground=THEME.green, font=THEME.font_heading,
+            relief="flat", highlightthickness=THEME.layout.highlight_thickness,
+            highlightbackground=THEME.field_border, highlightcolor=THEME.green,
+        )
+        self.title_entry.pack(fill="x", pady=(0, 12), ipady=7)
+        self.title_entry.insert(0, title)
+        tk.Label(
+            self.editor_panel, text="Texto", bg=THEME.state_panel,
+            fg=THEME.ink, font=THEME.font_label,
+        ).pack(anchor="w", pady=(0, 5))
+        body_frame = tk.Frame(self.editor_panel, bg=THEME.state_panel)
+        body_frame.pack(fill="both", expand=True)
+        self.body_editor = tk.Text(
+            body_frame, bg=THEME.panel, fg=THEME.ink,
+            insertbackground=THEME.green, font=THEME.font_text, height=8,
+            wrap="word", undo=True, relief="flat",
+            highlightthickness=THEME.layout.highlight_thickness,
+            highlightbackground=THEME.field_border, highlightcolor=THEME.green,
+        )
+        self.body_editor.pack(side="left", fill="both", expand=True)
+        body_scrollbar = tk.Scrollbar(body_frame, orient="vertical", command=self.body_editor.yview)
+        body_scrollbar.pack(side="right", fill="y")
+        self.body_editor.configure(yscrollcommand=body_scrollbar.set)
+        self.body_editor.insert("1.0", body)
+        for widget in (self.title_entry, self.body_editor):
+            widget.bind("<Command-s>", self._save_shortcut)
+            widget.bind("<Escape>", self._cancel_edit_shortcut)
+        actions = tk.Frame(self.editor_panel, bg=THEME.state_panel)
+        actions.pack(fill="x", pady=(12, 0))
+        make_button(
+            actions, "Salvar  ⌘S", "primary", pady=8, command=self.save_entry,
+        ).pack(side="right")
+        make_button(
+            actions, "Descartar alterações", "secondary", pady=8,
+            command=self.discard_editor_changes,
+        ).pack(side="right", padx=(0, 8))
+
+    def _select_list_entry(self, _event=None):
+        selection = self.note_list.curselection()
+        if selection:
+            self.select_entry(self.note_entry_ids[selection[0]])
+
+    def _save_shortcut(self, _event=None):
+        self.save_entry()
+        return "break"
+
+    def _cancel_edit_shortcut(self, _event=None):
+        if self._has_pending_changes():
+            choice = ask_unsaved_changes(self.root)
+            if choice == "save":
+                self.save_entry()
+            elif choice == "discard":
+                self.discard_editor_changes()
+        return "break"
+
+    def select_entry(self, entry_id):
+        current_id = self.active_entry_id
+        if not self._confirm_pending_changes():
+            self.note_list.selection_clear(0, "end")
+            if current_id in self.note_entry_ids:
+                self.note_list.selection_set(self.note_entry_ids.index(current_id))
+            return
+        self.active_entry_id = entry_id
+        self.refresh_notes()
+
+    def new_entry(self):
+        if self.session is None or not self._confirm_pending_changes():
+            return
+        self.active_entry_id = None
+        self.refresh_notes()
+
+    def _editor_values(self):
+        return self.title_entry.get(), self.body_editor.get("1.0", "end-1c")
+
+    def _has_pending_changes(self):
+        if self.session is None:
+            return False
+        if getattr(self, "title_entry", None) is None or getattr(self, "body_editor", None) is None:
+            return False
+        for widget in (self.title_entry, self.body_editor):
+            if hasattr(widget, "winfo_exists"):
+                try:
+                    if not widget.winfo_exists():
+                        return False
+                except tk.TclError:
+                    return False
+        return self._editor_values() != (self.saved_title, self.saved_body)
+
+    def _confirm_pending_changes(self):
+        if not self._has_pending_changes():
+            return True
+        choice = ask_unsaved_changes(self.root)
+        if choice == "save":
+            return self.save_entry()
+        if choice == "discard":
+            self.discard_editor_changes()
+            return True
+        return False
+
+    def discard_editor_changes(self):
+        """Restaura o último conteúdo persistido ou limpa o rascunho novo."""
+        self.refresh_notes()
+
+    def save_entry(self):
+        """Valida e persiste o editor como um novo snapshot, mantendo o rascunho em erro."""
+        if self.session is None:
+            return False
+        if self.active_entry_id is not None and not self._has_pending_changes():
+            return True
+        title, body = self._editor_values()
+        title = title.strip()
+        if not title:
+            messagebox.showerror("Título necessário", "Dê um título à nota antes de salvar.", parent=self.root)
+            self.title_entry.focus_set()
+            return False
+        snapshot = self.session.snapshot
+        document = snapshot.document
+        entry = self._updated_entry(document, title, body)
+        try:
+            self.session.save(VaultSnapshot(document, snapshot.attachments))
+        except DurabilityUncertainError:
+            self._mark_entry_saved(entry, title, body)
+            messagebox.showwarning(
+                "Gravação incerta",
+                "A alteração está visível no arquivo, mas a confirmação de durabilidade falhou. "
+                "Não repita a edição; confira a base antes de fechar o aplicativo.", parent=self.root,
+            )
+            return False
+        except Exception:
+            messagebox.showerror(
+                "Não foi possível salvar",
+                "O rascunho continua no editor. A base pode ter mudado ou estar indisponível.",
+                parent=self.root,
+            )
+            return False
+        self._mark_entry_saved(entry, title, body)
+        return True
+
+    def _updated_entry(self, document, title: str, body: str):
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        if self.active_entry_id is None:
+            collection_id = self._default_collection(document)
+            entry = {
+                "id": str(uuid4()), "title": title, "body_markdown": body,
+                "collection_id": collection_id, "tags": [], "created_at": now,
+                "updated_at": now, "published_at": None, "favorite": False, "attachments": [],
+            }
+            document["entries"].append(entry)
+            return entry
+        entry = next(item for item in document["entries"] if item["id"] == self.active_entry_id)
+        entry["title"] = title
+        entry["body_markdown"] = body
+        entry["updated_at"] = now
+        return entry
+
+    @staticmethod
+    def _default_collection(document):
+        if document["collections"]:
+            return document["collections"][0]["id"]
+        collection_id = str(uuid4())
+        document["collections"].append({"id": collection_id, "name": "Geral"})
+        return collection_id
+
+    def _mark_entry_saved(self, entry, title: str, body: str):
+        self.active_entry_id = entry["id"]
+        self.saved_title, self.saved_body = title, body
+        self.update_summary(self.session.snapshot.document)
+        self.refresh_notes()
 
     def update_summary(self, document):
         """Atualiza os contadores visíveis para corresponderem à base ativa."""
@@ -463,13 +808,19 @@ class CadernoApp:
 
     def close_vault(self):
         """Fecha a sessão e descarta as referências mantidas pela interface."""
+        if not self._confirm_pending_changes():
+            return False
         if self.session is not None:
             self.session.close()
             self.session = None
+        self.active_entry_id = None
+        self.saved_title = self.saved_body = ""
         self.show_locked()
+        return True
 
     def close_app(self):
-        self.close_vault()
+        if not self.close_vault():
+            return
         self.root.destroy()
 
     def restore_last_vault(self):
@@ -511,7 +862,10 @@ def build_sidebar(parent: tk.Widget, app: CadernoApp) -> None:
     sidebar.pack_propagate(False)
 
     build_brand(sidebar)
-    make_button(sidebar, "+  Novo texto", "primary", pady=11, state="disabled").pack(fill="x", pady=(0, 20))
+    app.new_entry_button = make_button(
+        sidebar, "+  Novo texto", "primary", pady=11, command=app.new_entry, state="disabled",
+    )
+    app.new_entry_button.pack(fill="x", pady=(0, 20))
     build_navigation(sidebar)
     build_collections(sidebar)
     build_sidebar_status(sidebar, app)
@@ -643,9 +997,15 @@ def build_library(parent: tk.Widget, app: CadernoApp) -> None:
         pady=THEME.layout.main_vertical_padding,
     )
     content.pack(fill="both", expand=True)
-    build_welcome(content)
-    build_summary(content, app)
-    build_search(content)
+    app.welcome_area = tk.Frame(content, bg=THEME.paper)
+    app.welcome_area.pack(fill="x")
+    build_welcome(app.welcome_area)
+    app.summary_area = tk.Frame(content, bg=THEME.paper)
+    app.summary_area.pack(fill="x")
+    build_summary(app.summary_area, app)
+    app.search_area = tk.Frame(content, bg=THEME.paper)
+    app.search_area.pack(fill="x")
+    build_search(app.search_area)
     build_empty_state(content, app)
 
 
