@@ -11,7 +11,7 @@ Antes de alterar o projeto, leia [`MEMORIA_DO_PROJETO.md`](MEMORIA_DO_PROJETO.md
 - Prefira soluções pequenas e claras. Mantenha funções com até 50 linhas; divida-as quando necessário.
 - Documente APIs públicas e funções sensíveis com docstrings que expliquem finalidade, entradas/saídas, erros e garantias relevantes. Comente invariantes criptográficas ou de persistência não óbvias; evite comentários linha a linha que apenas repetem o código.
 - Crie testes automatizados para funcionalidades e regressões de bugs.
-- Toda mudança de UI deve incluir um modo reproduzível de experimentá-la pela janela real, com instruções curtas e resultados esperados; testes unitários isolados não substituem esse roteiro manual.
+- Toda mudança de UI deve incluir um modo reproduzível de experimentá-la pela janela real, com instruções curtas e resultados esperados; testes unitários isolados não substituem esse roteiro manual. Atualize o script raiz `testar_ui.command`, que roda os testes focados da UI e inicia o app num perfil de teste que rejeita cofres fora da pasta sintética.
 - Não altere a interface durante o trabalho do cofre criptográfico, salvo solicitação explícita de integração.
 
 ## Segurança do cofre

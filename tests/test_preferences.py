@@ -43,4 +43,17 @@ def test_last_vault_preferences_ignore_symlink(tmp_path, monkeypatch):
 def test_config_directory_can_be_isolated_for_manual_ui_testing(tmp_path, monkeypatch):
     monkeypatch.setenv("CADERNO_CONFIG_DIR", str(tmp_path))
 
-    assert preferences._preferences_file() == tmp_path / "preferences.json"
+    assert preferences._preferences_file() == tmp_path / "Caderno de Pensamentos" / "preferences.json"
+
+
+def test_override_never_changes_permissions_on_the_supplied_profile_root(tmp_path, monkeypatch):
+    profile = tmp_path / "profile"
+    profile.mkdir(mode=0o755)
+    profile.chmod(0o755)
+    monkeypatch.setenv("CADERNO_CONFIG_DIR", str(profile))
+
+    preferences.save_last_vault(profile / "test.cpv")
+
+    assert stat.S_IMODE(profile.stat().st_mode) == 0o755
+    app_preferences = profile / "Caderno de Pensamentos"
+    assert stat.S_IMODE(app_preferences.stat().st_mode) == 0o700

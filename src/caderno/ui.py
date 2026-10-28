@@ -1,3 +1,4 @@
+import os
 import tkinter as tk
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -15,9 +16,17 @@ PAPER = "#f5f3ee"
 SIDEBAR = "#f0eee8"
 PANEL = "#fffefa"
 INK = "#202622"
-MUTED = "#858981"
+MUTED = "#5f665e"
 LINE = "#e8e6df"
 GREEN = "#355c47"
+PRIMARY_BUTTON = "#294b38"
+SECONDARY_BUTTON = "#dfe4dc"
+SECONDARY_ACTIVE = "#cfd8cc"
+SAGE = "#536b56"
+DISABLED_BUTTON = "#e3e5de"
+STATE_PANEL = "#f7f6f1"
+FIELD_BORDER = "#7c8278"
+FOCUS_ON_PRIMARY = "#f6f3e9"
 
 
 class CadernoApp:
@@ -41,11 +50,21 @@ class CadernoApp:
 
     def create(self):
         """Pede destino e senha, cria cofre vazio e só então lembra o caminho."""
-        target = filedialog.asksaveasfilename(
+        options = dict(
             parent=self.root, title="Criar base", defaultextension=".cpv",
             filetypes=[("Base criptografada", "*.cpv")],
         )
+        if os.environ.get("CADERNO_UI_TEST_PROFILE"):
+            options["initialdir"] = os.environ["CADERNO_UI_TEST_PROFILE"]
+        target = filedialog.asksaveasfilename(**options)
         if not target:
+            return
+        if not self._path_allowed_in_test_profile(Path(target)):
+            messagebox.showerror(
+                "Arquivo fora da pasta de teste",
+                "No perfil de teste, crie a base dentro da pasta de teste indicada no Terminal.",
+                parent=self.root,
+            )
             return
         password = simpledialog.askstring("Criar base", "Escolha uma senha:", show="•", parent=self.root)
         if password is None:
@@ -85,15 +104,25 @@ class CadernoApp:
 
     def choose(self):
         """Seleciona um arquivo de cofre e solicita a senha sem persistí-la."""
-        target = filedialog.askopenfilename(
+        options = dict(
             parent=self.root, title="Abrir base",
             filetypes=[("Base criptografada", "*.cpv"), ("Todos os arquivos", "*")],
         )
+        if os.environ.get("CADERNO_UI_TEST_PROFILE"):
+            options["initialdir"] = os.environ["CADERNO_UI_TEST_PROFILE"]
+        target = filedialog.askopenfilename(**options)
         if target:
             self.unlock(Path(target))
 
     def unlock(self, path: Path):
         """Abre um cofre; mensagens de falha não revelam detalhes internos do arquivo."""
+        if not self._path_allowed_in_test_profile(path):
+            messagebox.showerror(
+                "Arquivo fora da pasta de teste",
+                "No perfil de teste, escolha um arquivo dentro da pasta de teste indicada no Terminal.",
+                parent=self.root,
+            )
+            return
         password = simpledialog.askstring("Abrir base", "Digite a senha da base:", show="•", parent=self.root)
         if password is None:
             return
@@ -108,6 +137,19 @@ class CadernoApp:
             return
         self._activate(session)
         self._remember_path(path)
+
+    @staticmethod
+    def _path_allowed_in_test_profile(path: Path) -> bool:
+        """Restringe cofres ao perfil descartável quando o launcher de UI está ativo."""
+        profile = os.environ.get("CADERNO_UI_TEST_PROFILE")
+        if not profile:
+            return True
+        try:
+            root = Path(profile).expanduser().resolve()
+            target = Path(path).expanduser().resolve()
+            return target != root and target.is_relative_to(root)
+        except (OSError, RuntimeError):
+            return False
 
     def _remember_path(self, path: Path):
         try:
@@ -131,8 +173,8 @@ class CadernoApp:
         self.render_state(
             "Seu caderno começa com uma ideia.",
             "Abra ou crie uma base criptografada para começar.",
-            "Escolher base", self.choose,
-            "Criar base", self.create,
+            ("Escolher base", self.choose, "primary"),
+            ("Criar base", self.create, "primary"),
         )
 
     def show_unlocked(self, session: VaultSession):
@@ -143,8 +185,8 @@ class CadernoApp:
         self.render_state(
             "Base desbloqueada.",
             "O cofre está aberto. A edição de textos será conectada na próxima etapa.",
-            "Escolher outra base", self.choose,
-            "Fechar base", self.close_vault,
+            ("Escolher outra base", self.choose, "secondary"),
+            ("Fechar base", self.close_vault, "secondary"),
         )
 
     def update_summary(self, document):
@@ -167,14 +209,16 @@ class CadernoApp:
         for child in self.state_area.winfo_children():
             child.destroy()
         tk.Label(self.state_area, text="✳", bg="#f1f2ec", fg="#6d826f", font=("Georgia", 20), width=3).pack(pady=(0, 10))
-        tk.Label(self.state_area, text=title, bg="#f7f6f1", fg="#38453b", font=("Georgia", 18)).pack()
+        tk.Label(self.state_area, text=title, bg=STATE_PANEL, fg="#38453b", font=("Georgia", 18)).pack()
         tk.Label(
-            self.state_area, text=description, bg="#f7f6f1", fg="#969a91", font=("Arial", 9),
+            self.state_area, text=description, bg=STATE_PANEL, fg=MUTED, font=("Arial", 9),
             wraplength=600,
         ).pack(pady=(7, 15))
-        for index in range(0, len(actions), 2):
-            label, callback = actions[index:index + 2]
-            make_button(self.state_area, label, GREEN, "white", pady=9, command=callback).pack(pady=3)
+        for label, callback, variant in actions:
+            make_button(
+                self.state_area, label, GREEN, "white", pady=9,
+                command=callback, variant=variant,
+            ).pack(pady=3)
 
     def close_vault(self):
         """Fecha a sessão e descarta as referências mantidas pela interface."""
@@ -256,17 +300,20 @@ def build_navigation(parent: tk.Widget) -> None:
     items = ("▤   Todos os textos", "◷   Recentes", "☆   Favoritos", "⚙   Configurações")
     for index, label in enumerate(items):
         bg = "#e4e5dd" if index == 0 else SIDEBAR
-        fg = "#273b30" if index == 0 else "#686e68"
+        fg = "#273b30" if index == 0 else MUTED
+        row = tk.Frame(parent, bg=bg)
+        row.pack(fill="x", pady=1)
+        tk.Frame(row, bg=GREEN if index == 0 else bg, width=3).pack(side="left", fill="y")
         tk.Label(
-            parent, text=label, bg=bg, fg=fg, anchor="w", padx=10, pady=10
-        ).pack(fill="x", pady=1)
+            row, text=label, bg=bg, fg=fg, anchor="w", padx=10, pady=10
+        ).pack(side="left", fill="x", expand=True)
 
 
 def build_collections(parent: tk.Widget) -> None:
     heading = tk.Frame(parent, bg=SIDEBAR)
     heading.pack(fill="x", pady=(27, 8))
     tk.Label(
-        heading, text="COLEÇÕES", bg=SIDEBAR, fg="#999b92", font=("Menlo", 8)
+        heading, text="COLEÇÕES", bg=SIDEBAR, fg=MUTED, font=("Menlo", 8)
     ).pack(side="left", padx=10)
     tk.Label(
         heading, text="+", bg=SIDEBAR, fg=MUTED, font=("Arial", 15)
@@ -275,7 +322,7 @@ def build_collections(parent: tk.Widget) -> None:
         parent,
         text="Suas coleções aparecerão aqui",
         bg=SIDEBAR,
-        fg="#a0a198",
+        fg=MUTED,
         anchor="w",
         padx=10,
         pady=8,
@@ -299,13 +346,16 @@ def build_sidebar_status(parent: tk.Widget, app: CadernoApp) -> None:
         status,
         text="Escolha ou crie uma base para começar",
         bg=SIDEBAR,
-        fg="#999b93",
+        fg=MUTED,
         anchor="w",
         font=("Arial", 8),
         wraplength=200,
     )
     app.status_detail.pack(fill="x", padx=9, pady=(5, 10))
-    app.close_button = make_button(status, "Fechar base", PANEL, INK, pady=7, command=app.close_vault)
+    app.close_button = make_button(
+        status, "Fechar base", PANEL, INK, pady=7,
+        command=app.close_vault, variant="secondary",
+    )
 
 
 def build_main_panel(parent: tk.Widget, app: CadernoApp) -> None:
@@ -329,14 +379,14 @@ def build_topbar(parent: tk.Widget) -> None:
         topbar,
         text="Seu espaço   /   Todos os textos",
         bg=PAPER,
-        fg="#686e68",
+        fg=MUTED,
         font=("Arial", 9),
     ).pack(side="left")
     tk.Label(
         topbar,
         text="PROTÓTIPO VISUAL     ◷  Calendário",
         bg=PAPER,
-        fg="#657566",
+        fg=SAGE,
         font=("Arial", 9),
     ).pack(side="right")
 
@@ -352,7 +402,7 @@ def build_library(parent: tk.Widget, app: CadernoApp) -> None:
 
 def build_welcome(parent: tk.Widget) -> None:
     tk.Label(
-        parent, text="SEU ARQUIVO PESSOAL", bg=PAPER, fg="#a2a295", font=("Menlo", 8)
+        parent, text="SEU ARQUIVO PESSOAL", bg=PAPER, fg=MUTED, font=("Menlo", 8)
     ).pack(anchor="w")
     tk.Label(
         parent,
@@ -394,22 +444,27 @@ def build_search(parent: tk.Widget) -> None:
         row,
         relief="flat",
         bg=PANEL,
-        fg="#777e74",
+        fg=MUTED,
+        disabledbackground=PANEL,
+        disabledforeground=MUTED,
         insertbackground=GREEN,
+        highlightbackground=FIELD_BORDER,
+        highlightcolor=GREEN,
+        highlightthickness=1,
         font=("Arial", 10),
     )
     search.insert(0, "⌕   Buscar por título, tema ou conteúdo…")
     search.configure(state="disabled")
     search.pack(side="left", fill="x", expand=True, ipady=10, padx=(0, 12))
     make_button(
-        row, "Ordenar: última edição  ▾", PANEL, "#5d645d", pady=9, state="disabled"
+        row, "Ordenar: última edição  ▾", PANEL, MUTED, pady=9, state="disabled"
     ).pack(side="right")
 
 
 def build_empty_state(parent: tk.Widget, app: CadernoApp) -> None:
     box = tk.Frame(
         parent,
-        bg="#f7f6f1",
+        bg=STATE_PANEL,
         highlightbackground="#dcdcd3",
         highlightthickness=1,
         padx=20,
@@ -421,21 +476,38 @@ def build_empty_state(parent: tk.Widget, app: CadernoApp) -> None:
 
 def make_button(
     parent: tk.Widget, label: str, background: str, foreground: str, pady: int,
-    command=None, state="normal",
+    command=None, state="normal", variant="default",
 ) -> tk.Button:
+    active_background = GREEN
+    active_foreground = "white"
+    focus_color = GREEN
+    if variant == "primary":
+        background, foreground = PRIMARY_BUTTON, "white"
+        focus_color = FOCUS_ON_PRIMARY
+    elif variant == "secondary":
+        background, foreground = SECONDARY_BUTTON, INK
+        active_background, active_foreground = SECONDARY_ACTIVE, INK
+    if state == "disabled":
+        background = DISABLED_BUTTON
+        foreground = MUTED
+        active_background, active_foreground = background, foreground
     return tk.Button(
         parent,
         text=label,
         bg=background,
         fg=foreground,
-        activebackground=GREEN,
-        activeforeground="white",
+        activebackground=active_background,
+        activeforeground=active_foreground,
+        disabledforeground=foreground,
+        highlightbackground=background,
+        highlightcolor=focus_color,
+        highlightthickness=1,
         relief="flat",
         borderwidth=0,
         padx=12,
         pady=pady,
         font=("Arial", 9, "bold"),
-        cursor="hand2",
+        cursor="arrow" if state == "disabled" else "hand2",
         command=command,
         state=state,
     )

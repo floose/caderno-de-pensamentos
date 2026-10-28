@@ -15,6 +15,7 @@ def bare_app():
 
 def test_create_activates_and_remembers_only_after_password_confirmation(tmp_path, monkeypatch):
     app = bare_app()
+    monkeypatch.delenv("CADERNO_CONFIG_DIR", raising=False)
     target = tmp_path / "new.cpv"
     session = object()
     monkeypatch.setattr(ui.filedialog, "asksaveasfilename", lambda **kwargs: str(target))
@@ -49,6 +50,7 @@ def test_create_with_mismatched_password_does_not_create_or_remember(monkeypatch
 
 def test_unlock_success_activates_and_remembers_path(tmp_path, monkeypatch):
     app = bare_app()
+    monkeypatch.delenv("CADERNO_CONFIG_DIR", raising=False)
     path = tmp_path / "existing.cpv"
     session = object()
     monkeypatch.setattr(ui.simpledialog, "askstring", lambda *args, **kwargs: "passphrase")
@@ -64,6 +66,7 @@ def test_unlock_success_activates_and_remembers_path(tmp_path, monkeypatch):
 
 def test_unlock_failure_keeps_current_session_and_does_not_remember(monkeypatch):
     app = bare_app()
+    monkeypatch.delenv("CADERNO_CONFIG_DIR", raising=False)
     original_session = object()
     app.session = original_session
     monkeypatch.setattr(ui.simpledialog, "askstring", lambda *args, **kwargs: "wrong")
@@ -104,3 +107,74 @@ def test_restore_missing_last_vault_warns_without_trying_to_unlock(tmp_path, mon
 
     app.unlock.assert_not_called()
     showinfo.assert_called_once()
+
+
+def test_file_dialogs_start_in_isolated_profile_when_configured(tmp_path, monkeypatch):
+    app = bare_app()
+    monkeypatch.setenv("CADERNO_UI_TEST_PROFILE", str(tmp_path))
+    save_dialog = Mock(return_value="")
+    open_dialog = Mock(return_value="")
+    monkeypatch.setattr(ui.filedialog, "asksaveasfilename", save_dialog)
+    monkeypatch.setattr(ui.filedialog, "askopenfilename", open_dialog)
+
+    app.create()
+    app.choose()
+
+    assert save_dialog.call_args.kwargs["initialdir"] == str(tmp_path)
+    assert open_dialog.call_args.kwargs["initialdir"] == str(tmp_path)
+
+
+def test_unlock_rejects_file_outside_isolated_test_profile(tmp_path, monkeypatch):
+    app = bare_app()
+    profile = tmp_path / "test-profile"
+    profile.mkdir()
+    monkeypatch.setenv("CADERNO_CONFIG_DIR", str(profile))
+    monkeypatch.setenv("CADERNO_UI_TEST_PROFILE", str(profile))
+    monkeypatch.setattr(ui, "open_vault", Mock())
+    showerror = Mock()
+    monkeypatch.setattr(ui.messagebox, "showerror", showerror)
+
+    app.unlock(tmp_path / "real-vault.cpv")
+
+    ui.open_vault.assert_not_called()
+    app._remember_path.assert_not_called()
+    showerror.assert_called_once()
+    assert "real-vault.cpv" not in showerror.call_args.args[1]
+
+
+def test_create_rejects_destination_outside_isolated_test_profile(tmp_path, monkeypatch):
+    app = bare_app()
+    profile = tmp_path / "test-profile"
+    profile.mkdir()
+    monkeypatch.setenv("CADERNO_CONFIG_DIR", str(profile))
+    monkeypatch.setenv("CADERNO_UI_TEST_PROFILE", str(profile))
+    monkeypatch.setattr(ui.filedialog, "asksaveasfilename", lambda **kwargs: str(tmp_path / "real-vault.cpv"))
+    password_prompt = Mock()
+    monkeypatch.setattr(ui.simpledialog, "askstring", password_prompt)
+    create = Mock()
+    monkeypatch.setattr(ui, "create_vault", create)
+    showerror = Mock()
+    monkeypatch.setattr(ui.messagebox, "showerror", showerror)
+
+    app.create()
+
+    password_prompt.assert_not_called()
+    create.assert_not_called()
+    app._remember_path.assert_not_called()
+    showerror.assert_called_once()
+
+
+def test_preferences_override_alone_does_not_restrict_vault_opening(tmp_path, monkeypatch):
+    app = bare_app()
+    monkeypatch.setenv("CADERNO_CONFIG_DIR", str(tmp_path / "preferences"))
+    monkeypatch.delenv("CADERNO_UI_TEST_PROFILE", raising=False)
+    session = object()
+    monkeypatch.setattr(ui.simpledialog, "askstring", lambda *args, **kwargs: "passphrase")
+    open_file = Mock(return_value=session)
+    monkeypatch.setattr(ui, "open_vault", open_file)
+
+    vault_path = tmp_path / "outside-profile.cpv"
+    app.unlock(vault_path)
+
+    open_file.assert_called_once_with(vault_path, "passphrase")
+    app._activate.assert_called_once_with(session)

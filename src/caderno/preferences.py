@@ -13,7 +13,7 @@ def _preferences_file() -> Path:
     """Retorna preferências macOS, aceitando pasta isolada para testes manuais."""
     override = os.environ.get("CADERNO_CONFIG_DIR")
     if override:
-        return Path(override).expanduser() / "preferences.json"
+        return Path(override).expanduser() / "Caderno de Pensamentos" / "preferences.json"
     return Path.home() / "Library" / "Application Support" / "Caderno de Pensamentos" / "preferences.json"
 
 

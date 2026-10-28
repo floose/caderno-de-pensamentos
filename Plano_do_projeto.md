@@ -127,19 +127,15 @@ Produzir o pacote em um Mac arm64, validar as arquiteturas das dependências e t
 5. Anexar e visualizar imagens; adicionar o calendário baseado nas datas das notas.
 6. Completar backup/restauração, troca de senha na interface, acessibilidade e comportamento ao fechar o aplicativo.
 
-### Como testar manualmente a UI atual (macOS)
+### Ponto único para testar a UI (macOS)
 
-Use uma pasta temporária para que o teste não leia nem altere a preferência real do aplicativo. No terminal integrado do VS Code, execute uma vez:
+Na raiz do projeto, dê duplo clique em [`testar_ui.command`](testar_ui.command). O script roda primeiro os testes automatizados focados em UI, preferências e contraste; se passarem, abre a janela real. Também pode ser iniciado com `./testar_ui.command` no terminal. Se falhar durante a preparação ou nos testes, o Terminal permanece aberto e mostra a mensagem.
 
-```sh
-export CADERNO_CONFIG_DIR="$(mktemp -d)"
-export PYTHONPATH=src
-.venv/bin/python -m caderno
-```
+O script usa o Python de `.venv` e mantém um perfil de teste sintético em `/private/tmp`, separado das preferências normais; ele cria e protege a própria subpasta do aplicativo com permissão `0700`, sem alterar a permissão da pasta indicada pelo ambiente. Define `CADERNO_CONFIG_DIR` para isolar preferências e `CADERNO_UI_TEST_PROFILE` para ativar a restrição de criar/abrir cofres dentro do perfil. O perfil persiste entre execuções para testar a lembrança da última base; os diálogos começam nessa pasta e a UI rejeita caminhos externos enquanto esse modo estiver ativo. Essa é uma proteção contra seleção acidental de arquivos reais, não uma sandbox contra hard links criados deliberadamente. Na primeira execução, escolha **Criar base**, salve `teste.cpv` na pasta sugerida e digite/confirme uma senha. Confira os textos brancos sobre verde escuro nos botões principais. Depois de abrir o cofre, **Fechar base** e **Escolher outra base** devem aparecer com fundo verde-claro e texto escuro, inclusive ao passar o ponteiro. O texto do botão desativado **Novo texto** deve continuar legível. Use `Tab` para percorrer os botões e conferir o indicador de foco.
 
-Mantenha o mesmo terminal aberto para que os dois valores continuem definidos. Na primeira janela, escolha **Criar base**. No diálogo de arquivo, use `echo "$CADERNO_CONFIG_DIR"` para obter a pasta e `⌘⇧G` para navegar até ela; salve como `teste.cpv`, digite e confirme uma senha. A tela deve indicar que a base está aberta e mostrar zero textos e uma coleção. Use **Fechar base**, depois escolha a base existente e tente primeiro uma senha incorreta: o aplicativo deve mostrar erro genérico e deixar a base fechada. Repita com a senha correta; a base deve abrir. Feche a janela e execute `.venv/bin/python -m caderno` novamente no mesmo terminal: o aplicativo deve encontrar a última base e pedir a senha.
+Use **Fechar base**, tente abrir com uma senha incorreta e confirme que aparece um erro genérico e a base continua fechada. Repita com a senha correta. Feche o app e dê duplo clique no script outra vez: ele deve encontrar a última base e pedir a senha. Para um arquivo inválido, crie um arquivo de texto na pasta de teste e selecione-o pelo filtro **Todos os arquivos**; a mensagem de erro deve aparecer sem fechar a janela. O diretório usado é exibido no Terminal; não contém dados pessoais e pode ser removido pelo Finder após fechar o aplicativo.
 
-Para testar um arquivo inválido, crie um arquivo de texto na pasta temporária e selecione-o como base pelo filtro **Todos os arquivos**; a interface deve informar que não foi possível abrir, sem encerrar o aplicativo. Esses passos testam a janela e o backend criptográfico local com dados descartáveis. Os testes automatizados continuam complementares; a validação visual do `.app` empacotado é uma etapa futura.
+Toda nova tela ou teste de UI deve ser conectado a este ponto único. Os callbacks Tkinter e o backend CPV1 real já passaram por um smoke test automatizado; a validação visual do `.app` empacotado continua pendente.
 
 Uma prova mínima do `.app` arm64, com Tkinter e PyNaCl, avança em paralelo à primeira fatia para identificar cedo problemas de empacotamento. O `.app` integrado precisa passar o ciclo de criar, abrir, salvar, reabrir e trocar senha antes do uso com dados pessoais.
 
