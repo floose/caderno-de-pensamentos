@@ -63,6 +63,8 @@ export CADERNO_CONFIG_DIR="$TEST_DATA_DIR"
 export CADERNO_UI_TEST_PROFILE="$TEST_DATA_DIR"
 printf '\nAbrindo o Caderno com perfil de teste em: %s\n' "$TEST_DATA_DIR"
 printf 'Use somente cofres sintéticos neste perfil de teste.\n\n'
+printf 'Na janela, crie uma coleção pelo +, associe-a a uma nota e informe hashtags como #ideia, #projeto.\n'
+printf 'Salve, feche e reabra a base: coleção e hashtags devem continuar na nota.\n\n'
 "$PYTHON_BIN" -m caderno
 APP_STATUS=$?
 

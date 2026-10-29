@@ -15,6 +15,9 @@ class FakeEntry:
     def get(self, *_args):
         return self.value
 
+    def focus_set(self):
+        pass
+
 
 class FakeBody(FakeEntry):
     pass
@@ -27,6 +30,13 @@ def app_with_editor(session):
     app.active_entry_id = None
     app.saved_title = ""
     app.saved_body = ""
+    initial_collection = session.snapshot.document["collections"][0]["id"]
+    app.collection_choice = FakeEntry(initial_collection)
+    app.collection_ids_by_label = {initial_collection: initial_collection}
+    app.tags_entry = FakeEntry()
+    app.saved_collection_id = initial_collection
+    app.saved_tags = []
+    app.editor_metadata_ready = True
     app.title_entry = FakeEntry()
     app.body_editor = FakeBody()
     app.update_summary = Mock()
@@ -71,6 +81,7 @@ def test_note_create_edit_close_and_reopen_persist_in_real_vault(tmp_path, monke
 
     app.title_entry.value = "Nota sintética"
     app.body_editor.value = "Primeira versão"
+    app.tags_entry.value = "#ensaio, #macOS"
     assert app.save_entry()
     entry_id = app.active_entry_id
 
@@ -89,6 +100,7 @@ def test_note_create_edit_close_and_reopen_persist_in_real_vault(tmp_path, monke
     assert entry["id"] == entry_id
     assert entry["title"] == "Nota editada"
     assert entry["body_markdown"] == "Conteúdo atualizado"
+    assert entry["tags"] == ["ensaio", "macOS"]
     assert entries["entry-synthetic"]["attachments"] == ["attachment-synthetic"]
     assert persisted.attachments[0].data == image_bytes
     reopened.close()
@@ -106,6 +118,86 @@ def test_note_create_edit_close_and_reopen_persist_in_real_vault(tmp_path, monke
     assert app.session.snapshot.document["entries"]
     app._remember_path.assert_called_once_with(path)
     assert app.close_vault()
+
+
+def test_collection_and_tags_edits_are_confirmed_and_persisted(tmp_path, monkeypatch):
+    path = tmp_path / "synthetic-organization.cpv"
+    initial = VaultSnapshot({
+        "schema_version": 1,
+        "collections": [
+            {"id": "collection-general", "name": "Geral"},
+            {"id": "collection-project", "name": "Projetos"},
+        ],
+        "attachments": [], "entries": [],
+    })
+    session = create_vault(path, "synthetic-password", initial)
+    app = app_with_editor(session)
+    app.title_entry.value = "Nota organizada"
+    app.body_editor.value = "Texto sintético"
+    app.collection_choice.value = "collection-project"
+    app.tags_entry.value = "#ideia, #pesquisa, #ideia"
+    monkeypatch.setattr(ui.messagebox, "showerror", Mock())
+
+    assert app.save_entry()
+    saved_entry = session.snapshot.document["entries"][0]
+    assert saved_entry["collection_id"] == "collection-project"
+    assert saved_entry["tags"] == ["ideia", "pesquisa"]
+    assert not app._has_pending_changes()
+    app.collection_choice.value = "collection-general"
+    app.tags_entry.value = "#rascunho"
+    assert app._has_pending_changes()
+    monkeypatch.setattr(ui, "ask_unsaved_changes", lambda _parent: "cancel")
+    assert not app.close_vault()
+    assert app.session is session
+
+    monkeypatch.setattr(ui, "ask_unsaved_changes", lambda _parent: "save")
+    assert app.close_vault()
+    reopened = open_vault(path, "synthetic-password")
+    entry = reopened.snapshot.document["entries"][0]
+    assert entry["collection_id"] == "collection-general"
+    assert entry["tags"] == ["rascunho"]
+    reopened.close()
+
+
+def test_add_collection_persists_real_vault_and_rejects_duplicate_name(tmp_path, monkeypatch):
+    path = tmp_path / "synthetic-collection-test.cpv"
+    session = create_vault(path, "synthetic-password", VaultSnapshot({
+        "schema_version": 1,
+        "collections": [{"id": "collection-general", "name": "Geral"}],
+        "attachments": [], "entries": [],
+    }))
+    app = app_with_editor(session)
+    monkeypatch.setattr(ui.messagebox, "showerror", Mock())
+    ask_name = Mock(side_effect=("Projetos", " geral "))
+    monkeypatch.setattr(ui.simpledialog, "askstring", ask_name)
+
+    assert app.add_collection()
+    assert not app.add_collection()
+    assert [item["name"] for item in session.snapshot.document["collections"]] == ["Geral", "Projetos"]
+    app.refresh_notes.assert_called_once_with()
+    session.close()
+
+
+def test_tag_over_schema_limit_keeps_draft_and_skips_persistence(monkeypatch):
+    snapshot = VaultSnapshot({
+        "schema_version": 1,
+        "collections": [{"id": "collection-synthetic", "name": "Geral"}],
+        "attachments": [], "entries": [],
+    })
+    session = Mock(snapshot=snapshot)
+    app = app_with_editor(session)
+    app.title_entry.value = "Nota válida"
+    app.tags_entry.value = "#" + "x" * 257
+    showerror = Mock()
+    monkeypatch.setattr(ui.messagebox, "showerror", showerror)
+
+    assert not app.save_entry()
+
+    session.save.assert_not_called()
+    assert app.tags_entry.value == "#" + "x" * 257
+    showerror.assert_called_once_with(
+        "Hashtag inválida", "Cada hashtag pode ter até 256 caracteres.", parent=app.root,
+    )
 
 
 def test_stale_ui_session_keeps_draft_without_overwriting_external_save(tmp_path, monkeypatch):

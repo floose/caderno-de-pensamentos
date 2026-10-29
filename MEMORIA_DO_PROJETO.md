@@ -21,19 +21,20 @@ Aplicativo offline para macOS Apple Silicon, em Python/Tkinter, planejado para d
 
 Cada documento deve manter os detalhes da sua área; evite copiá-los para esta memória.
 
-## Retomada — 2026-10-28
+## Retomada — 2026-10-29
 
-- Branch atual: `feature/ui-vault-integration`, baseada em `feature/vault-encryption`; `main` permanece preservada.
-- Commit recente: `beb4f20` estabiliza a restauração inicial e o diálogo de senha. As alterações atuais da primeira fatia de notas estão locais e sem commit.
+- Branch atual: `feature/ui-vault-integration`, baseada em `feature/vault-encryption`; `main` permanece preservada. HEAD confirmado: `1faec56`.
+- Há alterações locais sem commit em `src/caderno/ui.py`, `tests/test_ui.py`, `tests/test_ui_notes.py`, `tests/test_ui_layout.py`, `testar_ui.command`, `scripts/build_macos_app.command`, `scripts/packaged_entry.py`, `scripts/package_vault_smoke.py`, `Plano_do_projeto.md` e `MEMORIA_DO_PROJETO.md`.
 - A UI cria, seleciona, abre e fecha bases; também lista, cria e edita notas com rascunho local e salvamento explícito. O editor oferece `⌘S`; o diálogo de alterações oferece salvar, descartar e cancelar por botão, com `⌘S`, `⌘⌫` e `Escape`.
 - Execute `./testar_ui.command` (ou abra o arquivo pelo Finder) para rodar os testes focados e iniciar a janela com um perfil sintético isolado em `/private/tmp`. Não use arquivos pessoais nesse perfil.
-- Validações desta fatia: suíte focada de UI, notas, preferências, contraste e layout: 53 aprovados; mais 5 testes centrais de persistência, senha, falha pré-replace, durabilidade e conflito aprovados. Inclui ciclo real com PyNaCl, PNG sintético preservado, acesso com senha correta/incorreta e conflito entre sessões; `sh -n testar_ui.command` e `git diff --check` aprovados. A revisão cética não encontrou bloqueadores após corrigir o fechamento com widgets descartados. O launcher abriu a janela real no perfil sintético; ainda falta conferir manualmente os atalhos e o tamanho mínimo.
+- A UI agora permite criar coleções e associar coleção e hashtags às notas. Alterações nesses metadados participam do estado pendente e das escolhas salvar/descartar/cancelar; coleções e hashtags são persistidas no snapshot do cofre. O roteiro de janela real está em `testar_ui.command`.
+- Validações da fatia: 61 testes focados aprovados (UI, notas, preferências, contraste e layout); `sh -n` nos scripts e `git diff --check` passaram. O ciclo de persistência da nota com metadados foi coberto com cofre sintético real. A build arm64 foi refeita e o smoke test CPV1 empacotado passou; o exercício completo de criar/editar/reabrir notas pela janela do `.app` ainda precisa ser feito.
 - O cofre CPV1 tem backend real com PyNaCl/libsodium e fixtures sintéticas. O ciclo e os limites criptográficos estão descritos nos documentos de referência. Ainda falta validar dependências, desempenho e ciclo integrado no `.app` arm64 antes de usar dados pessoais.
 
 ## Próximos passos
 
-1. Conferir na janela real o fluxo de notas, os atalhos e as decisões salvar/descartar/cancelar, inclusive em 900 × 620.
-2. Continuar com organização por coleções e hashtags, mantendo fixtures sintéticas e a fachada `caderno.vault`.
-3. Preparar e validar uma prova `.app` arm64 antes de avançar para backup, integração completa e o gate de dados pessoais.
+1. Validar o ciclo completo de coleção/nota pela janela do `.app` empacotado.
+2. Validar abertura do pacote após mover/extraí-lo e testar em macOS 14 e numa instalação limpa.
+3. Avançar com busca, filtros e ordenação; depois Markdown, anexos, calendário e backup/restauração.
 
 Não fazer commit até receber autorização explícita.

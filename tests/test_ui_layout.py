@@ -110,6 +110,7 @@ def test_note_editor_fits_minimum_window_dimensions():
     required_editor_height = (
         2 * (_text_height(theme.font_label) + 5)
         + _text_height(theme.font_heading) + 12
+        + _text_height(theme.font_label) + 4 + _text_height(theme.font_body) + 8
         + 8 * _text_height(theme.font_text)
         + _text_height(theme.font_button) + 2 * 8 + 12
     )
@@ -121,6 +122,8 @@ def test_note_editor_fits_minimum_window_dimensions():
 
     assert editor_content_height > required_editor_height
     assert editor_width >= 300
+    assert (editor_width - 8) / 2 >= 140
+    assert _text_width(theme.font_label, "Hashtags") <= (editor_width - 8) / 2
 
 
 def test_password_dialog_text_and_actions_fit_its_theme_geometry():

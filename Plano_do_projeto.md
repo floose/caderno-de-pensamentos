@@ -54,8 +54,8 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 - [x] Implementar um núcleo de cofre isolado da interface — protótipo em `src/caderno/vault/`.
 - [x] Exercitar o backend PyNaCl real com fixtures sintéticas, inclusive um milhão de palavras e imagens.
 - [x] Testar corrupção, salvamento/reabertura e troca de senha pelo backend criptográfico real com fixtures sintéticas; medir Argon2id no runtime Mac atual. Resultados e limites em [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
-- [ ] Validar PyNaCl/libsodium, ciclo de cofre e perfil Argon2id no `.app` arm64 antes de usar dados pessoais.
-- [ ] Integrar o cofre com textos, coleções, hashtags, datas, favoritos e imagens.
+- [ ] Validar o ciclo integrado completo de cofre e o perfil Argon2id pela UI do `.app` arm64 antes de usar dados pessoais.
+- [x] Integrar o cofre com texto, coleções e hashtags na UI; datas, favoritos e imagens seguem pendentes.
 - [ ] Planejar backup e migração de versões do formato.
 - [ ] Comunicar claramente que uma senha perdida não permite recuperar o conteúdo.
 
@@ -92,7 +92,7 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 
 ### 6. Empacotar e validar no macOS
 
-- [ ] Gerar um `.app` independente do Python instalado na máquina, preferencialmente com PyInstaller em modo `onedir` e `--windowed`.
+- [x] Gerar uma prova local do `.app` independente do Python instalado na máquina, com PyInstaller em modo `onedir` e `--windowed`; isso ainda não conclui a validação de distribuição.
 - [ ] Compactar o `.app` em ZIP para entrega e cópia para computador ou pendrive; validar extração e abertura sem instalador.
 - [ ] Avaliar `--onefile --windowed` somente se um executável único for requisito literal após prototipagem; verificar o custo de extração e inicialização.
 - [ ] Testar em uma instalação limpa do macOS dentro das versões suportadas.
@@ -110,6 +110,15 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 
 Produzir o pacote em um Mac arm64, validar as arquiteturas das dependências e testar a abertura após extrair o ZIP em outro local. A distribuição inicial é para uso próprio/testes, sem assinatura Developer ID ou notarização.
 
+#### Resultado da prova inicial do `.app` arm64
+
+- Build reproduzível em [`scripts/build_macos_app.command`](scripts/build_macos_app.command), com entry point em [`scripts/packaged_entry.py`](scripts/packaged_entry.py); artefatos ficam em `build/macos-arm64/`, ignorado pelo Git.
+- PyInstaller não encontrou sozinho as importações tardias do cofre. A build precisa coletar `nacl` e `cffi`; sem isso, faltaram primeiro `_sodium.abi3.so` e depois `_cffi_backend`.
+- Empacotar `src/caderno/__main__.py` como script isolado perdeu o contexto do pacote e falhou com `No module named 'ui'`. O entry point dedicado chama `caderno.__main__.main()`.
+- No macOS 26.6.2 arm64, Python 3.13.7 e PyInstaller 6.22.3, o `.app` de prova foi gerado com cerca de 27 MB. O executável, `_sodium`, `_cffi_backend` e `_tkinter` são arm64; Tcl/Tk foi incluído. A janela inicial do app abriu pelo LaunchServices.
+- [`scripts/package_vault_smoke.py`](scripts/package_vault_smoke.py), compilado como executável auxiliar com as mesmas coletas, criou, abriu, editou, salvou e reabriu um cofre sintético com backend real. Isso valida a coleta nativa e o ciclo CPV1 nesse runtime empacotado, mas ainda não exercita esse ciclo através da UI do próprio `.app`.
+- Continuam pendentes o ciclo integrado pela UI do `.app`, abrir o pacote movido/extraído de outro local, testar em macOS 14 e numa instalação limpa, medir inicialização em outros Macs e decidir assinatura/notarização. Dados pessoais seguem bloqueados até esses gates e backup/restauração estarem validados.
+
 ### Processo de desenvolvimento da UI e das funcionalidades
 
 **Estratégia escolhida: fatias verticais por fluxo.** Cada entrega completa uma tarefa de ponta a ponta — interface, estado da aplicação e chamada ao cofre — para obter feedback de integração cedo. Foram consideradas duas alternativas: construir todas as telas com dados falsos antes de conectá-las, o que pode afastar o comportamento da API real; ou implementar o domínio de todas as funções antes da UI, o que atrasa o feedback de uso. Ambas podem servir a protótipos curtos, mas não serão o fluxo principal.
@@ -122,7 +131,7 @@ Produzir o pacote em um Mac arm64, validar as arquiteturas das dependências e t
 
 1. Criar, selecionar, abrir e fechar base; tratar base ausente, senha incorreta e arquivo inválido; guardar apenas o último caminho.
 2. Listar, criar, editar e excluir uma nota; salvar, fechar e reabrir sem perder conteúdo.
-3. Organizar notas em coleções e hashtags; suportar rascunhos, favoritos e datas.
+3. [x] Organizar notas em coleções e hashtags; suportar rascunhos. Favoritos e datas continuam pendentes.
 4. Buscar, filtrar e ordenar notas; editar e visualizar Markdown.
 5. Anexar e visualizar imagens; adicionar o calendário baseado nas datas das notas.
 6. Completar backup/restauração, troca de senha na interface, acessibilidade e comportamento ao fechar o aplicativo.
@@ -135,7 +144,7 @@ O script usa o Python de `.venv` e mantém um perfil de teste sintético em `/pr
 
 Nos prompts de senha, confira o campo mascarado e os botões **Cancelar** e de ação (**Continuar**, **Confirmar** ou **Abrir base**), com o mesmo tema da janela principal. **Enter** confirma e **Escape** cancela.
 
-Com uma base de teste aberta, use **Novo texto**, preencha título e corpo e salve pelo botão ou com **⌘S**. Altere a nota e selecione outra ou tente fechar a base: o diálogo oferece **Salvar**, **Descartar** e **Cancelar**. **⌘S** salva, **⌘⌫** descarta e **Escape** cancela a ação, mantendo o rascunho. O botão **Descartar alterações** no editor restaura a última versão salva. Feche e reabra a base sintética e confirme que a lista e o conteúdo persistiram. O título é obrigatório; em falha de gravação, o rascunho permanece no editor.
+Com uma base de teste aberta, use o **+** ao lado de **Coleções** para criar uma coleção. Use **Novo texto**, preencha título e corpo, escolha a coleção no editor e digite hashtags separadas por vírgula (por exemplo, `#ideia, #projeto`). Salve pelo botão ou com **⌘S**. Altere o conteúdo ou os metadados e tente fechar a base: o diálogo oferece **Salvar**, **Descartar** e **Cancelar**; cancelar mantém o rascunho, descartar restaura a versão persistida e salvar grava a nota e seus metadados. Feche e reabra a base sintética e confirme que coleção e hashtags continuam na nota. O título é obrigatório; hashtags acima de 256 caracteres devem ser rejeitadas sem perder o rascunho.
 
 Use **Fechar base**, tente abrir com uma senha incorreta e confirme que aparece um erro genérico e a base continua fechada. Repita com a senha correta. Feche o app e dê duplo clique no script outra vez: ele deve encontrar a última base e pedir a senha. Para um arquivo inválido, crie um arquivo de texto na pasta de teste e selecione-o pelo filtro **Todos os arquivos**; a mensagem de erro deve aparecer sem fechar a janela. O diretório usado é exibido no Terminal; não contém dados pessoais e pode ser removido pelo Finder após fechar o aplicativo.
 
@@ -173,7 +182,7 @@ Legenda: ██ trabalho previsto; .. sem atividade prevista.
 ## Acompanhamento
 
 - **Estado atual:** primeira versão restrita a Apple Silicon (`arm64`), macOS 14 Sonoma ou posterior, Tkinter e distribuição inicial para uso próprio/testes.
-- **Estado da UI:** criar, escolher, abrir e fechar base estão implementados. A primeira fatia de notas lista, cria e edita título/corpo com rascunho local e salvamento explícito pela fachada `caderno.vault`; o fechamento da base protege alterações pendentes. O ciclo real com fixture sintética passou. O launcher e o roteiro estão em [`testar_ui.command`](testar_ui.command).
+- **Estado da UI:** criar, escolher, abrir e fechar base estão implementados. Notas podem ser listadas, criadas e editadas com rascunho local e salvamento explícito; coleção e hashtags são editáveis e persistidas, e o fechamento protege alterações pendentes inclusive nos metadados. 61 testes focados passaram com fixture sintética. O launcher e o roteiro de janela real estão em [`testar_ui.command`](testar_ui.command).
 - **Estado do cofre:** protótipo CPV1 isolado, testado com backend PyNaCl e fixtures sintéticas. Resultados e pendências atuais estão em [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
-- **Próximo marco:** validar manualmente a lista, o editor, os atalhos e as decisões salvar/descartar/cancelar na janela real; em seguida implementar organização por coleções e hashtags. Preparar em paralelo a prova `.app` arm64.
-- **Atualizado em:** 2026-10-28.
+- **Próximo marco:** exercitar coleção e nota pela janela do `.app` recém-gerado; depois validar pacote movido/extraído e avançar com busca, filtros e ordenação.
+- **Atualizado em:** 2026-10-29.

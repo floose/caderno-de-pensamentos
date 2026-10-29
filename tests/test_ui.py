@@ -35,11 +35,15 @@ def bare_app():
     app.body_editor = FakeTextField()
     app.saved_title = ""
     app.saved_body = ""
+    app.saved_collection_id = None
+    app.saved_tags = []
+    app.editor_metadata_ready = False
     app._activate = Mock()
     app._remember_path = Mock()
     app.refresh_notes = Mock()
     app.update_summary = Mock()
     app.new_entry_button = Mock()
+    app.collection_add_button = Mock()
     app.welcome_area = Mock()
     app.summary_area = Mock()
     app.search_area = Mock()
@@ -69,6 +73,43 @@ class FakeDialogWidget:
 
     def get(self):
         return "synthetic password"
+
+
+class FakeEditorWidget:
+    def __init__(self, *_args, **options):
+        self.bindings = {}
+        self.options = options
+        self.pack_options = []
+        self.configure_options = {}
+
+    def pack(self, **options):
+        self.pack_options.append(options)
+
+    def bind(self, event, callback):
+        self.bindings[event] = callback
+
+    def insert(self, *_args):
+        pass
+
+    def configure(self, **options):
+        self.configure_options.update(options)
+
+    def set(self, *_args):
+        pass
+
+    def yview(self, *_args):
+        pass
+
+
+class FakeStringVar:
+    def __init__(self, _master=None, value=""):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+    def set(self, value):
+        self.value = value
 
 
 class FakePasswordWindow(FakeDialogWidget):
@@ -662,6 +703,89 @@ def test_command_s_handler_saves_and_consumes_key_event():
     app.save_entry.assert_called_once_with()
 
 
+def test_hashtag_parser_trims_prefixes_and_removes_duplicates():
+    assert ui.CadernoApp._parse_tags(" #Ideia, projeto, ##Ideia, , # ") == ["Ideia", "projeto"]
+
+
+def test_duplicate_collection_names_get_distinct_editor_choices():
+    document = {"collections": [
+        {"id": "collection-one", "name": "Ideias"},
+        {"id": "collection-two", "name": "Ideias"},
+    ]}
+
+    options = ui.CadernoApp._collection_options(document)
+
+    assert len({label for label, _ident in options}) == 2
+    assert {ident for _label, ident in options} == {"collection-one", "collection-two"}
+
+
+def test_note_editor_binds_save_and_cancel_shortcuts_to_both_fields(monkeypatch):
+    app = bare_app()
+    app.editor_panel = FakeEditorWidget()
+    app.session = Mock(snapshot=VaultSnapshot({
+        "schema_version": 1, "collections": [{"id": "collection-1", "name": "Geral"}],
+        "attachments": [], "entries": [],
+    }))
+    app.save_entry = Mock()
+    app._cancel_edit_shortcut = Mock()
+    for widget_name in ("Label", "Frame", "Entry", "Text", "Scrollbar"):
+        monkeypatch.setattr(ui.tk, widget_name, FakeEditorWidget)
+    monkeypatch.setattr(ui.tk, "StringVar", FakeStringVar)
+    monkeypatch.setattr(ui.ttk, "Combobox", FakeEditorWidget)
+    monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
+
+    ui.CadernoApp._render_note_editor(app, None)
+
+    for field in (app.title_entry, app.body_editor):
+        assert set(field.bindings) == {"<Command-s>", "<Escape>"}
+        field.bindings["<Command-s>"](None)
+        field.bindings["<Escape>"](None)
+    assert app.save_entry.call_count == 2
+    assert app._cancel_edit_shortcut.call_count == 2
+
+
+def test_note_editor_connects_vertical_scrollbar_to_text_widget(monkeypatch):
+    app = bare_app()
+    app.editor_panel = FakeEditorWidget()
+    app.session = Mock(snapshot=VaultSnapshot({
+        "schema_version": 1, "collections": [{"id": "collection-1", "name": "Geral"}],
+        "attachments": [], "entries": [],
+    }))
+    widgets = []
+
+    def create_widget(*args, **options):
+        widget = FakeEditorWidget(*args, **options)
+        widgets.append(widget)
+        return widget
+
+    for widget_name in ("Label", "Frame", "Entry", "Text", "Scrollbar"):
+        monkeypatch.setattr(ui.tk, widget_name, create_widget)
+    monkeypatch.setattr(ui.tk, "StringVar", FakeStringVar)
+    monkeypatch.setattr(ui.ttk, "Combobox", create_widget)
+    monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
+
+    ui.CadernoApp._render_note_editor(app, None)
+
+    scrollbar = next(widget for widget in widgets if widget.options.get("orient") == "vertical")
+    assert scrollbar.options["command"] == app.body_editor.yview
+    assert scrollbar.pack_options == [{"side": "right", "fill": "y"}]
+    assert app.body_editor.configure_options["yscrollcommand"] == scrollbar.set
+
+
+def test_main_window_applies_minimum_size_from_shared_layout(monkeypatch):
+    root = Mock()
+    monkeypatch.setattr(ui, "configure_fonts", Mock())
+    monkeypatch.setattr(ui, "build_sidebar", Mock())
+    monkeypatch.setattr(ui, "build_main_panel", Mock())
+    monkeypatch.setattr(ui.CadernoApp, "show_locked", Mock())
+    monkeypatch.setattr(ui.tk, "Frame", FakeEditorWidget)
+
+    ui.CadernoApp(root)
+
+    root.geometry.assert_called_once_with("1180x760")
+    root.minsize.assert_called_once_with(900, 620)
+
+
 def test_locked_and_unlocked_views_choose_the_shared_button_variants():
     app = bare_app()
     app.status = Mock()
@@ -675,6 +799,7 @@ def test_locked_and_unlocked_views_choose_the_shared_button_variants():
     locked_actions = app.render_state.call_args.args[2:]
     assert [action[2] for action in locked_actions] == ["primary", "primary"]
     app.new_entry_button.configure.assert_called_once_with(state="disabled")
+    app.collection_add_button.configure.assert_called_once_with(state="disabled")
 
     app.render_state.reset_mock()
     session = Mock(path=Path("synthetic.cpv"), snapshot=Mock(document={"entries": [], "collections": []}))
@@ -682,6 +807,7 @@ def test_locked_and_unlocked_views_choose_the_shared_button_variants():
     app.render_state.assert_not_called()
     app.refresh_notes.assert_called_once_with()
     assert app.new_entry_button.configure.call_args_list[-1].kwargs == {"state": "normal"}
+    assert app.collection_add_button.configure.call_args_list[-1].kwargs == {"state": "normal"}
 
 
 def test_sidebar_close_button_uses_the_same_secondary_variant(monkeypatch):

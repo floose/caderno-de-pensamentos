@@ -3,7 +3,7 @@ import tkinter as tk
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from tkinter import filedialog, font, messagebox
+from tkinter import filedialog, font, messagebox, simpledialog, ttk
 from typing import Literal
 from uuid import uuid4
 
@@ -102,7 +102,6 @@ class UITheme:
     font_brand_name: tuple
     font_brand_subtitle: tuple
     font_icon: tuple
-    font_collection_add: tuple
     font_title: tuple
     font_heading: tuple
     font_summary: tuple
@@ -150,7 +149,6 @@ THEME = UITheme(
     font_label=("Arial", 11), font_tiny=("Arial", 10),
     font_brand=("Georgia", 20, "bold"), font_brand_name=("Arial", 12, "bold"),
     font_brand_subtitle=("Georgia", 11, "italic"), font_icon=("Georgia", 22),
-    font_collection_add=("Arial", 18),
     font_title=("Georgia", 34), font_heading=("Georgia", 22),
     font_summary=("Georgia", 18), font_mono_small=("Menlo", 10),
     layout=UILayout(
@@ -345,6 +343,10 @@ class CadernoApp:
         self.active_entry_id = None
         self.saved_title = ""
         self.saved_body = ""
+        self.saved_collection_id = None
+        self.saved_tags = []
+        self.collection_ids_by_label = {}
+        self.editor_metadata_ready = False
         root.title("Caderno de Pensamentos")
         root.geometry(f"{THEME.layout.window_size[0]}x{THEME.layout.window_size[1]}")
         root.minsize(*THEME.layout.minimum_window_size)
@@ -508,7 +510,9 @@ class CadernoApp:
         self.status_detail.configure(text="Escolha ou crie uma base para começar")
         self.title_entry = None
         self.body_editor = None
+        self.editor_metadata_ready = False
         self.new_entry_button.configure(state="disabled")
+        self.collection_add_button.configure(state="disabled")
         self.welcome_area.pack(fill="x", before=self.summary_area)
         self.search_area.pack(fill="x", before=self.state_area)
         self.close_button.pack_forget()
@@ -519,15 +523,18 @@ class CadernoApp:
             ("Escolher base", self.choose, "primary"),
             ("Criar base", self.create, "primary"),
         )
+        self._render_collection_list()
 
     def show_unlocked(self, session: VaultSession):
         self.status.configure(text="●  Base aberta", fg=THEME.green)
         self.status_detail.configure(text=session.path.name)
         self.new_entry_button.configure(state="normal")
+        self.collection_add_button.configure(state="normal")
         self.welcome_area.pack_forget()
         self.search_area.pack_forget()
         self.close_button.pack(fill="x", padx=8, pady=(8, 0))
         self.update_summary(session.snapshot.document)
+        self._render_collection_list()
         self.refresh_notes()
 
     @staticmethod
@@ -563,6 +570,95 @@ class CadernoApp:
             None,
         )
 
+    def add_collection(self):
+        """Pede um nome e persiste uma coleção sem alterar notas existentes."""
+        if self.session is None or not self._confirm_pending_changes():
+            return False
+        name = simpledialog.askstring("Nova coleção", "Nome da coleção:", parent=self.root)
+        if name is None:
+            return False
+        name = name.strip()
+        if not name or len(name) > 4096:
+            messagebox.showerror("Nome inválido", "Informe um nome de até 4096 caracteres.", parent=self.root)
+            return False
+        current_snapshot = self.session.snapshot
+        document = current_snapshot.document
+        if any(item["name"].casefold() == name.casefold() for item in document["collections"]):
+            messagebox.showerror("Coleção existente", "Já existe uma coleção com esse nome.", parent=self.root)
+            return False
+        document["collections"].append({"id": str(uuid4()), "name": name})
+        try:
+            snapshot = VaultSnapshot(document, current_snapshot.attachments)
+            self.session.save(snapshot)
+        except DurabilityUncertainError:
+            self.update_summary(self.session.snapshot.document)
+            self._render_collection_list()
+            self.refresh_notes()
+            messagebox.showwarning(
+                "Gravação incerta", "A coleção está visível na base; confira o arquivo antes de fechar.",
+                parent=self.root,
+            )
+            return False
+        except Exception:
+            messagebox.showerror(
+                "Não foi possível criar", "A coleção não foi salva. A base pode ter mudado ou estar indisponível.",
+                parent=self.root,
+            )
+            return False
+        self.update_summary(self.session.snapshot.document)
+        self._render_collection_list()
+        self.refresh_notes()
+        return True
+
+    def _render_collection_list(self):
+        """Mostra as coleções da sessão atual ou o estado vazio da barra lateral."""
+        area = getattr(self, "collection_items", None)
+        if area is None:
+            return
+        for child in area.winfo_children():
+            child.destroy()
+        collections = self.session.snapshot.document["collections"] if self.session else []
+        if not collections:
+            tk.Label(
+                area, text="Suas coleções aparecerão aqui", bg=THEME.sidebar, fg=THEME.muted,
+                anchor="w", padx=10, pady=8, font=THEME.font_label,
+            ).pack(fill="x")
+            return
+        for collection in collections:
+            tk.Label(
+                area, text=collection["name"], bg=THEME.sidebar, fg=THEME.ink,
+                anchor="w", padx=10, pady=5, font=THEME.font_label,
+            ).pack(fill="x")
+
+    @staticmethod
+    def _parse_tags(value: str) -> list[str]:
+        """Converte hashtags separadas por vírgula em nomes únicos sem `#`."""
+        tags = []
+        for part in value.split(","):
+            tag = part.strip().lstrip("#").strip()
+            if tag and tag not in tags:
+                tags.append(tag)
+        return tags
+
+    def _editor_metadata(self):
+        if not self.editor_metadata_ready:
+            entry = self._active_entry()
+            if entry:
+                return entry["collection_id"], list(entry["tags"])
+            collections = self.session.snapshot.document["collections"] if self.session else []
+            return (collections[0]["id"] if collections else None), []
+        label = self.collection_choice.get()
+        collection_id = self.collection_ids_by_label.get(label, label)
+        tags = self._parse_tags(self.tags_entry.get())
+        collections = self.session.snapshot.document["collections"]
+        available_ids = {item["id"] for item in collections}
+        if collection_id not in available_ids:
+            entry = self._active_entry()
+            collection_id = entry["collection_id"] if entry else None
+            if collection_id is None and collections:
+                collection_id = collections[0]["id"]
+        return collection_id, tags
+
     def _render_note_list(self, parent):
         listbox = tk.Listbox(
             parent, bg=THEME.panel, fg=THEME.ink, selectbackground=THEME.selected_navigation_background,
@@ -593,6 +689,26 @@ class CadernoApp:
         title = entry["title"] if entry else ""
         body = entry["body_markdown"] if entry else ""
         self.saved_title, self.saved_body = title, body
+        self._initialize_editor_metadata(entry)
+        self._render_title_field(title)
+        self._render_metadata_fields()
+        self._render_body_field(body)
+        self._render_editor_actions()
+
+    def _initialize_editor_metadata(self, entry):
+        document = self.session.snapshot.document
+        self.collection_options = self._collection_options(document)
+        self.collection_ids_by_label = dict(self.collection_options)
+        collection_id = entry["collection_id"] if entry else self.collection_options[0][1]
+        selected_label = next(
+            (label for label, ident in self.collection_options if ident == collection_id),
+            self.collection_options[0][0],
+        )
+        self.collection_choice = tk.StringVar(self.editor_panel, value=selected_label)
+        self.saved_collection_id = collection_id
+        self.saved_tags = list(entry["tags"]) if entry else []
+
+    def _render_title_field(self, title):
         tk.Label(
             self.editor_panel, text="Título", bg=THEME.state_panel,
             fg=THEME.ink, font=THEME.font_label,
@@ -605,6 +721,38 @@ class CadernoApp:
         )
         self.title_entry.pack(fill="x", pady=(0, 12), ipady=7)
         self.title_entry.insert(0, title)
+
+    def _render_metadata_fields(self):
+        options = self.collection_options
+        metadata = tk.Frame(self.editor_panel, bg=THEME.state_panel)
+        metadata.pack(fill="x", pady=(0, 8))
+        collection_column = tk.Frame(metadata, bg=THEME.state_panel)
+        collection_column.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        tags_column = tk.Frame(metadata, bg=THEME.state_panel)
+        tags_column.pack(side="left", fill="x", expand=True)
+        tk.Label(
+            collection_column, text="Coleção", bg=THEME.state_panel,
+            fg=THEME.ink, font=THEME.font_label,
+        ).pack(anchor="w", pady=(0, 4))
+        ttk.Combobox(
+            collection_column, textvariable=self.collection_choice,
+            values=[label for label, _ident in options], state="readonly", width=14,
+        ).pack(fill="x")
+        tk.Label(
+            tags_column, text="Hashtags", bg=THEME.state_panel,
+            fg=THEME.ink, font=THEME.font_label,
+        ).pack(anchor="w", pady=(0, 4))
+        self.tags_entry = tk.Entry(
+            tags_column, bg=THEME.panel, fg=THEME.ink, insertbackground=THEME.green,
+            font=THEME.font_body, relief="flat",
+            highlightthickness=THEME.layout.highlight_thickness,
+            highlightbackground=THEME.field_border, highlightcolor=THEME.green,
+        )
+        self.tags_entry.pack(fill="x", ipady=4)
+        self.tags_entry.insert(0, ", ".join(f"#{tag}" for tag in self.saved_tags))
+        self.editor_metadata_ready = True
+
+    def _render_body_field(self, body):
         tk.Label(
             self.editor_panel, text="Texto", bg=THEME.state_panel,
             fg=THEME.ink, font=THEME.font_label,
@@ -626,6 +774,8 @@ class CadernoApp:
         for widget in (self.title_entry, self.body_editor):
             widget.bind("<Command-s>", self._save_shortcut)
             widget.bind("<Escape>", self._cancel_edit_shortcut)
+
+    def _render_editor_actions(self):
         actions = tk.Frame(self.editor_panel, bg=THEME.state_panel)
         actions.pack(fill="x", pady=(12, 0))
         make_button(
@@ -635,6 +785,25 @@ class CadernoApp:
             actions, "Descartar alterações", "secondary", pady=8,
             command=self.discard_editor_changes,
         ).pack(side="right", padx=(0, 8))
+
+    @staticmethod
+    def _collection_options(document):
+        """Monta rótulos selecionáveis e diferencia nomes de coleção duplicados."""
+        collections = document["collections"]
+        if not collections:
+            return [("Geral", None)]
+        counts = {}
+        for item in collections:
+            counts[item["name"]] = counts.get(item["name"], 0) + 1
+        options = []
+        occurrences = {}
+        for item in collections:
+            label = item["name"]
+            if counts[label] > 1:
+                occurrences[label] = occurrences.get(label, 0) + 1
+                label = f"{label} · {occurrences[label]}"
+            options.append((label, item["id"]))
+        return options
 
     def _select_list_entry(self, _event=None):
         selection = self.note_list.curselection()
@@ -676,16 +845,25 @@ class CadernoApp:
     def _has_pending_changes(self):
         if self.session is None:
             return False
-        if getattr(self, "title_entry", None) is None or getattr(self, "body_editor", None) is None:
+        if any(getattr(self, name, None) is None for name in ("title_entry", "body_editor")):
             return False
-        for widget in (self.title_entry, self.body_editor):
+        widgets = [self.title_entry, self.body_editor]
+        if self.editor_metadata_ready:
+            if getattr(self, "tags_entry", None) is None:
+                return False
+            widgets.append(self.tags_entry)
+        for widget in widgets:
             if hasattr(widget, "winfo_exists"):
                 try:
                     if not widget.winfo_exists():
                         return False
                 except tk.TclError:
                     return False
-        return self._editor_values() != (self.saved_title, self.saved_body)
+        content_changed = self._editor_values() != (self.saved_title, self.saved_body)
+        metadata_changed = self.editor_metadata_ready and (
+            self._editor_metadata() != (self.saved_collection_id, self.saved_tags)
+        )
+        return content_changed or metadata_changed
 
     def _confirm_pending_changes(self):
         if not self._has_pending_changes():
@@ -714,9 +892,14 @@ class CadernoApp:
             messagebox.showerror("Título necessário", "Dê um título à nota antes de salvar.", parent=self.root)
             self.title_entry.focus_set()
             return False
+        collection_id, tags = self._editor_metadata()
+        if any(len(tag) > 256 for tag in tags):
+            messagebox.showerror("Hashtag inválida", "Cada hashtag pode ter até 256 caracteres.", parent=self.root)
+            self.tags_entry.focus_set()
+            return False
         snapshot = self.session.snapshot
         document = snapshot.document
-        entry = self._updated_entry(document, title, body)
+        entry = self._updated_entry(document, title, body, collection_id, tags)
         try:
             self.session.save(VaultSnapshot(document, snapshot.attachments))
         except DurabilityUncertainError:
@@ -737,13 +920,13 @@ class CadernoApp:
         self._mark_entry_saved(entry, title, body)
         return True
 
-    def _updated_entry(self, document, title: str, body: str):
+    def _updated_entry(self, document, title: str, body: str, collection_id, tags: list[str]):
         now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
         if self.active_entry_id is None:
-            collection_id = self._default_collection(document)
+            collection_id = collection_id or self._default_collection(document)
             entry = {
                 "id": str(uuid4()), "title": title, "body_markdown": body,
-                "collection_id": collection_id, "tags": [], "created_at": now,
+                "collection_id": collection_id, "tags": tags, "created_at": now,
                 "updated_at": now, "published_at": None, "favorite": False, "attachments": [],
             }
             document["entries"].append(entry)
@@ -751,6 +934,8 @@ class CadernoApp:
         entry = next(item for item in document["entries"] if item["id"] == self.active_entry_id)
         entry["title"] = title
         entry["body_markdown"] = body
+        entry["collection_id"] = collection_id or self._default_collection(document)
+        entry["tags"] = tags
         entry["updated_at"] = now
         return entry
 
@@ -765,6 +950,8 @@ class CadernoApp:
     def _mark_entry_saved(self, entry, title: str, body: str):
         self.active_entry_id = entry["id"]
         self.saved_title, self.saved_body = title, body
+        self.saved_collection_id = entry["collection_id"]
+        self.saved_tags = list(entry["tags"])
         self.update_summary(self.session.snapshot.document)
         self.refresh_notes()
 
@@ -815,6 +1002,9 @@ class CadernoApp:
             self.session = None
         self.active_entry_id = None
         self.saved_title = self.saved_body = ""
+        self.saved_collection_id = None
+        self.saved_tags = []
+        self.editor_metadata_ready = False
         self.show_locked()
         return True
 
@@ -867,7 +1057,7 @@ def build_sidebar(parent: tk.Widget, app: CadernoApp) -> None:
     )
     app.new_entry_button.pack(fill="x", pady=(0, 20))
     build_navigation(sidebar)
-    build_collections(sidebar)
+    build_collections(sidebar, app)
     build_sidebar_status(sidebar, app)
 
 
@@ -910,25 +1100,18 @@ def build_navigation(parent: tk.Widget) -> None:
         ).pack(side="left", fill="x", expand=True)
 
 
-def build_collections(parent: tk.Widget) -> None:
+def build_collections(parent: tk.Widget, app: CadernoApp) -> None:
     heading = tk.Frame(parent, bg=THEME.sidebar)
     heading.pack(fill="x", pady=(27, 8))
     tk.Label(
         heading, text="COLEÇÕES", bg=THEME.sidebar, fg=THEME.muted, font=THEME.font_mono_small
     ).pack(side="left", padx=10)
-    tk.Label(
-        heading, text="+", bg=THEME.sidebar, fg=THEME.muted, font=THEME.font_collection_add
-    ).pack(side="right", padx=8)
-    tk.Label(
-        parent,
-        text="Suas coleções aparecerão aqui",
-        bg=THEME.sidebar,
-        fg=THEME.muted,
-        anchor="w",
-        padx=10,
-        pady=8,
-        font=THEME.font_label,
-    ).pack(fill="x")
+    app.collection_add_button = make_button(
+        heading, "+", "secondary", pady=1, command=app.add_collection, state="disabled",
+    )
+    app.collection_add_button.pack(side="right", padx=8)
+    app.collection_items = tk.Frame(parent, bg=THEME.sidebar)
+    app.collection_items.pack(fill="x")
 
 
 def build_sidebar_status(parent: tk.Widget, app: CadernoApp) -> None:
