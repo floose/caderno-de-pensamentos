@@ -117,6 +117,7 @@ Produzir o pacote em um Mac arm64, validar as arquiteturas das dependências e t
 - Empacotar `src/caderno/__main__.py` como script isolado perdeu o contexto do pacote e falhou com `No module named 'ui'`. O entry point dedicado chama `caderno.__main__.main()`.
 - No macOS 26.6.2 arm64, Python 3.13.7 e PyInstaller 6.22.3, o `.app` de prova foi gerado com cerca de 27 MB. O executável, `_sodium`, `_cffi_backend` e `_tkinter` são arm64; Tcl/Tk foi incluído. A janela inicial do app abriu pelo LaunchServices.
 - [`scripts/package_vault_smoke.py`](scripts/package_vault_smoke.py), compilado como executável auxiliar com as mesmas coletas, criou, abriu, editou, salvou e reabriu um cofre sintético com backend real. Isso valida a coleta nativa e o ciclo CPV1 nesse runtime empacotado, mas ainda não exercita esse ciclo através da UI do próprio `.app`.
+- Um aceite separado da UI do código-fonte passou em janela Tk real com cofre CPV1 sintético: criação de coleção pelo callback, edição de nota, `⌘S` gerado no campo de hashtags, `Escape` com Cancelar e Descartar, e fechamento/reabertura com coleção e hashtags preservadas. A janela reportou estado normal e visível. O nome da coleção foi fornecido pelo harness ao diálogo; a interação física com o diálogo e o ciclo pelo bundle `.app` ainda não foram validados.
 - Continuam pendentes o ciclo integrado pela UI do `.app`, abrir o pacote movido/extraído de outro local, testar em macOS 14 e numa instalação limpa, medir inicialização em outros Macs e decidir assinatura/notarização. Dados pessoais seguem bloqueados até esses gates e backup/restauração estarem validados.
 
 ### Processo de desenvolvimento da UI e das funcionalidades
@@ -148,7 +149,7 @@ Com uma base de teste aberta, use o **+** ao lado de **Coleções** para criar u
 
 Use **Fechar base**, tente abrir com uma senha incorreta e confirme que aparece um erro genérico e a base continua fechada. Repita com a senha correta. Feche o app e dê duplo clique no script outra vez: ele deve encontrar a última base e pedir a senha. Para um arquivo inválido, crie um arquivo de texto na pasta de teste e selecione-o pelo filtro **Todos os arquivos**; a mensagem de erro deve aparecer sem fechar a janela. O diretório usado é exibido no Terminal; não contém dados pessoais e pode ser removido pelo Finder após fechar o aplicativo.
 
-Toda nova tela ou teste de UI deve ser conectado a este ponto único. Os callbacks Tkinter e o backend CPV1 real já passaram por um smoke test automatizado; a validação visual do `.app` empacotado continua pendente.
+Toda nova tela ou teste de UI deve ser conectado a este ponto único. Os callbacks Tkinter e o backend CPV1 real passaram por testes automatizados e por um aceite com janela Tk real; a validação visual e o ciclo integrado do `.app` empacotado continuam pendentes.
 
 Uma prova mínima do `.app` arm64, com Tkinter e PyNaCl, avança em paralelo à primeira fatia para identificar cedo problemas de empacotamento. O `.app` integrado precisa passar o ciclo de criar, abrir, salvar, reabrir e trocar senha antes do uso com dados pessoais.
 
@@ -184,5 +185,5 @@ Legenda: ██ trabalho previsto; .. sem atividade prevista.
 - **Estado atual:** primeira versão restrita a Apple Silicon (`arm64`), macOS 14 Sonoma ou posterior, Tkinter e distribuição inicial para uso próprio/testes.
 - **Estado da UI:** criar, escolher, abrir e fechar base estão implementados. Notas podem ser listadas, criadas e editadas com rascunho local e salvamento explícito; coleção e hashtags são editáveis e persistidas, e o fechamento protege alterações pendentes inclusive nos metadados. 61 testes focados passaram com fixture sintética. O launcher e o roteiro de janela real estão em [`testar_ui.command`](testar_ui.command).
 - **Estado do cofre:** protótipo CPV1 isolado, testado com backend PyNaCl e fixtures sintéticas. Resultados e pendências atuais estão em [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
-- **Próximo marco:** exercitar coleção e nota pela janela do `.app` recém-gerado; depois validar pacote movido/extraído e avançar com busca, filtros e ordenação.
+- **Próximo marco:** repetir coleção, nota e entrada nos diálogos pela janela do `.app` recém-gerado; depois validar pacote movido/extraído e avançar com busca, filtros e ordenação.
 - **Atualizado em:** 2026-10-29.
