@@ -251,6 +251,37 @@ def test_alert_dialog_uses_theme_tokens_and_dismisses_with_keyboard(monkeypatch)
     assert dialog.window.destroyed
 
 
+def test_text_input_dialog_uses_theme_and_supports_submit_or_cancel(monkeypatch):
+    install_dialog_widgets(monkeypatch)
+    labels = []
+    buttons = []
+    monkeypatch.setattr(
+        ui.tk, "Label",
+        lambda *_args, **options: labels.append(options) or FakeDialogWidget(**options),
+    )
+    monkeypatch.setattr(
+        ui, "make_button",
+        lambda *args, **kwargs: buttons.append((args, kwargs)) or FakeDialogWidget(),
+    )
+
+    submitted = ui.TextInputDialog(FakePasswordParent(), "Nova coleção", "Nome da coleção:")
+
+    assert submitted.window.geometry_value == "480x260+450+450"
+    assert labels[0]["fg"] == ui.THEME.state_title
+    assert labels[0]["font"] == ui.THEME.font_heading
+    assert submitted.text_entry.options["bg"] == ui.THEME.panel
+    assert submitted.text_entry.options["font"] == ui.THEME.font_body
+    assert [button[0][1:3] for button in buttons] == [
+        ("Cancelar", "secondary"), ("Criar", "primary"),
+    ]
+    submitted.window.bindings["<Return>"](None)
+    assert submitted.result == "synthetic password" and submitted.window.destroyed
+
+    cancelled = ui.TextInputDialog(FakePasswordParent(), "Nova coleção", "Nome da coleção:")
+    cancelled.window.bindings["<Escape>"](None)
+    assert cancelled.result is None and cancelled.window.destroyed
+
+
 def test_unsaved_dialog_binds_save_discard_and_cancel_shortcuts(monkeypatch):
     install_dialog_widgets(monkeypatch)
     monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
@@ -304,7 +335,7 @@ def test_create_activates_and_remembers_only_after_password_confirmation(tmp_pat
     monkeypatch.setattr(ui, "ask_password", ask_password)
     create = Mock(return_value=session)
     monkeypatch.setattr(ui, "create_vault", create)
-    monkeypatch.setattr(ui.messagebox, "showerror", Mock())
+    monkeypatch.setattr(ui, "show_alert", Mock())
 
     app.create()
 
@@ -324,7 +355,7 @@ def test_create_with_mismatched_password_does_not_create_or_remember(monkeypatch
     monkeypatch.setattr(ui, "ask_password", lambda *_args: next(answers))
     create = Mock()
     monkeypatch.setattr(ui, "create_vault", create)
-    monkeypatch.setattr(ui.messagebox, "showerror", Mock())
+    monkeypatch.setattr(ui, "show_alert", Mock())
 
     app.create()
 
@@ -360,7 +391,7 @@ def test_create_existing_file_does_not_prompt_or_discard_editor_draft(tmp_path, 
     monkeypatch.setattr(ui, "ask_unsaved_changes", unsaved_prompt)
     monkeypatch.setattr(ui, "ask_password", ask_password)
     showerror = Mock()
-    monkeypatch.setattr(ui.messagebox, "showerror", showerror)
+    monkeypatch.setattr(ui, "show_alert", showerror)
 
     app.create()
 
@@ -379,7 +410,7 @@ def test_rejected_test_profile_path_does_not_touch_pending_draft(tmp_path, monke
     monkeypatch.setenv("CADERNO_UI_TEST_PROFILE", str(profile))
     ask_unsaved = Mock()
     monkeypatch.setattr(ui, "ask_unsaved_changes", ask_unsaved)
-    monkeypatch.setattr(ui.messagebox, "showerror", Mock())
+    monkeypatch.setattr(ui, "show_alert", Mock())
 
     app.unlock(tmp_path / "outside.cpv")
 
@@ -417,7 +448,7 @@ def test_unlock_failure_keeps_current_session_and_does_not_remember(monkeypatch)
     monkeypatch.setattr(ui, "ask_password", lambda *_args: "wrong")
     monkeypatch.setattr(ui, "open_vault", Mock(side_effect=ValueError("secret detail")))
     showerror = Mock()
-    monkeypatch.setattr(ui.messagebox, "showerror", showerror)
+    monkeypatch.setattr(ui, "show_alert", showerror)
 
     app.unlock(Path("invalid.cpv"))
 
@@ -426,7 +457,7 @@ def test_unlock_failure_keeps_current_session_and_does_not_remember(monkeypatch)
     assert app.session is original_session
     assert app.title_entry.value == "Rascunho a preservar"
     assert app.body_editor.value == "Conteúdo a preservar"
-    assert "secret detail" not in showerror.call_args.args[1]
+    assert "secret detail" not in showerror.call_args.args[2]
 
 
 def test_cancelled_unlock_keeps_old_session_and_closes_candidate(monkeypatch):
@@ -490,7 +521,7 @@ def test_save_new_note_creates_entry_with_schema_fields(monkeypatch):
     })
     app.title_entry.value = "  Ideia nova  "
     app.body_editor.value = "Corpo sintético"
-    monkeypatch.setattr(ui.messagebox, "showerror", Mock())
+    monkeypatch.setattr(ui, "show_alert", Mock())
 
     assert app.save_entry()
 
@@ -530,7 +561,7 @@ def test_save_edit_preserves_created_time_tags_favorite_and_attachments(monkeypa
     app.body_editor.value = "Texto editado"
     app.saved_title = "Antes"
     app.saved_body = "Texto antigo"
-    monkeypatch.setattr(ui.messagebox, "showerror", Mock())
+    monkeypatch.setattr(ui, "show_alert", Mock())
 
     assert app.save_entry()
 
@@ -549,7 +580,7 @@ def test_save_without_title_keeps_editor_open(monkeypatch):
     app.title_entry.value = "   "
     app.body_editor.value = "Corpo que não deve sumir"
     showerror = Mock()
-    monkeypatch.setattr(ui.messagebox, "showerror", showerror)
+    monkeypatch.setattr(ui, "show_alert", showerror)
 
     assert not app.save_entry()
 
@@ -583,7 +614,7 @@ def test_failed_save_keeps_draft_and_saved_baseline(monkeypatch):
     app.title_entry.value = "Rascunho"
     app.body_editor.value = "Não perder"
     showerror = Mock()
-    monkeypatch.setattr(ui.messagebox, "showerror", showerror)
+    monkeypatch.setattr(ui, "show_alert", showerror)
 
     assert not app.save_entry()
 
@@ -609,7 +640,7 @@ def test_uncertain_durability_treats_visible_snapshot_as_saved(monkeypatch):
     app.title_entry.value = "Alteração visível"
     app.body_editor.value = "Conteúdo"
     warning = Mock()
-    monkeypatch.setattr(ui.messagebox, "showwarning", warning)
+    monkeypatch.setattr(ui, "show_alert", warning)
 
     assert not app.save_entry()
 
@@ -636,7 +667,7 @@ def test_uncertain_durability_does_not_close_vault_from_same_action(monkeypatch)
 
     session.save.side_effect = uncertain_save
     monkeypatch.setattr(ui, "ask_unsaved_changes", lambda _parent: "save")
-    monkeypatch.setattr(ui.messagebox, "showwarning", Mock())
+    monkeypatch.setattr(ui, "show_alert", Mock())
 
     assert not app.close_vault()
 
@@ -868,7 +899,7 @@ def test_restore_missing_last_vault_warns_without_trying_to_unlock(tmp_path, mon
     monkeypatch.setattr(ui, "load_last_vault", lambda: missing_path)
     app.unlock = Mock()
     showinfo = Mock()
-    monkeypatch.setattr(ui.messagebox, "showinfo", showinfo)
+    monkeypatch.setattr(ui, "show_alert", showinfo)
 
     app.restore_last_vault()
 
@@ -899,14 +930,14 @@ def test_unlock_rejects_file_outside_isolated_test_profile(tmp_path, monkeypatch
     monkeypatch.setenv("CADERNO_UI_TEST_PROFILE", str(profile))
     monkeypatch.setattr(ui, "open_vault", Mock())
     showerror = Mock()
-    monkeypatch.setattr(ui.messagebox, "showerror", showerror)
+    monkeypatch.setattr(ui, "show_alert", showerror)
 
     app.unlock(tmp_path / "real-vault.cpv")
 
     ui.open_vault.assert_not_called()
     app._remember_path.assert_not_called()
     showerror.assert_called_once()
-    assert "real-vault.cpv" not in showerror.call_args.args[1]
+    assert "real-vault.cpv" not in showerror.call_args.args[2]
 
 
 def test_create_rejects_destination_outside_isolated_test_profile(tmp_path, monkeypatch):
@@ -921,7 +952,7 @@ def test_create_rejects_destination_outside_isolated_test_profile(tmp_path, monk
     create = Mock()
     monkeypatch.setattr(ui, "create_vault", create)
     showerror = Mock()
-    monkeypatch.setattr(ui.messagebox, "showerror", showerror)
+    monkeypatch.setattr(ui, "show_alert", showerror)
 
     app.create()
 

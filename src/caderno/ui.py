@@ -3,7 +3,7 @@ import tkinter as tk
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from tkinter import filedialog, font, messagebox, simpledialog, ttk
+from tkinter import filedialog, font, ttk
 from typing import Literal
 from uuid import uuid4
 
@@ -59,6 +59,8 @@ class UILayout:
     password_prompt_wrap: int
     alert_dialog_size: tuple
     alert_dialog_padding: int
+    text_dialog_size: tuple
+    text_dialog_padding: int
     unsaved_dialog_size: tuple
     unsaved_dialog_padding: int
     notes_list_width: int
@@ -167,6 +169,7 @@ THEME = UITheme(
         password_dialog_size=(480, 300), password_dialog_padding=24,
         password_prompt_wrap=380,
         alert_dialog_size=(460, 220), alert_dialog_padding=24,
+        text_dialog_size=(480, 260), text_dialog_padding=24,
         unsaved_dialog_size=(520, 220), unsaved_dialog_padding=24,
         notes_list_width=190, notes_list_gap=18,
     ),
@@ -336,6 +339,91 @@ def show_alert(parent, title: str, message: str) -> None:
     parent.wait_window(dialog.window)
 
 
+class TextInputDialog:
+    """Pede um texto em modal próprio e devolve None quando cancelado."""
+
+    def __init__(self, parent, title: str, prompt: str):
+        self.result = None
+        self.window = tk.Toplevel(parent)
+        self.window.withdraw()
+        self.window.title(title)
+        self.window.configure(bg=THEME.paper)
+        self.window.resizable(False, False)
+        self.window.transient(parent)
+        self._build_content(prompt)
+        self.window.bind("<Return>", self._submit_event)
+        self.window.bind("<Escape>", self._cancel_event)
+        self.window.protocol("WM_DELETE_WINDOW", self.cancel)
+        self._center_on_parent(parent)
+        self.window.deiconify()
+        self.window.grab_set()
+        self.window.after_idle(self.text_entry.focus_set)
+
+    def _build_content(self, prompt: str):
+        width, height = THEME.layout.text_dialog_size
+        panel = tk.Frame(
+            self.window, bg=THEME.state_panel, padx=THEME.layout.text_dialog_padding,
+        )
+        panel.pack(fill="both", expand=True, padx=18, pady=18)
+        tk.Label(
+            panel, text=self.window.title(), bg=THEME.state_panel,
+            fg=THEME.state_title, font=THEME.font_heading,
+        ).pack(anchor="w", pady=(0, 8))
+        tk.Label(
+            panel, text=prompt, bg=THEME.state_panel, fg=THEME.muted,
+            font=THEME.font_body, wraplength=width - 2 * THEME.layout.text_dialog_padding,
+            justify="left",
+        ).pack(anchor="w", pady=(0, 16))
+        self.text_entry = tk.Entry(
+            panel, bg=THEME.panel, fg=THEME.ink, insertbackground=THEME.green,
+            highlightbackground=THEME.field_border, highlightcolor=THEME.green,
+            highlightthickness=THEME.layout.highlight_thickness, relief="flat",
+            font=THEME.font_body,
+        )
+        self.text_entry.pack(fill="x", ipady=7)
+        self._build_actions(panel)
+
+    def _build_actions(self, parent):
+        actions = tk.Frame(parent, bg=THEME.state_panel)
+        actions.pack(fill="x", pady=(22, 0))
+        actions.columnconfigure(0, weight=1)
+        make_button(actions, "Cancelar", "secondary", pady=8, command=self.cancel).grid(
+            row=0, column=0, sticky="e", padx=(0, 8),
+        )
+        make_button(actions, "Criar", "primary", pady=8, command=self.submit).grid(
+            row=0, column=1, sticky="e",
+        )
+
+    def _center_on_parent(self, parent):
+        self.window.update_idletasks()
+        width, height = THEME.layout.text_dialog_size
+        x = parent.winfo_rootx() + max((parent.winfo_width() - width) // 2, 0)
+        y = parent.winfo_rooty() + max((parent.winfo_height() - height) // 2, 0)
+        self.window.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _submit_event(self, _event=None):
+        self.submit()
+        return "break"
+
+    def _cancel_event(self, _event=None):
+        self.cancel()
+        return "break"
+
+    def submit(self):
+        self.result = self.text_entry.get()
+        self.window.destroy()
+
+    def cancel(self):
+        self.window.destroy()
+
+
+def ask_text(parent, title: str, prompt: str) -> str | None:
+    """Mostra entrada de texto modal; retorna None se for cancelada."""
+    dialog = TextInputDialog(parent, title, prompt)
+    parent.wait_window(dialog.window)
+    return dialog.result
+
+
 class UnsavedChangesDialog:
     """Pede uma decisão explícita antes de descartar um rascunho alterado."""
 
@@ -454,16 +542,14 @@ class CadernoApp:
         if not target:
             return
         if not self._path_allowed_in_test_profile(Path(target)):
-            messagebox.showerror(
+            show_alert(
+                self.root,
                 "Arquivo fora da pasta de teste",
                 "No perfil de teste, crie a base dentro da pasta de teste indicada no Terminal.",
-                parent=self.root,
             )
             return
         if Path(target).exists():
-            messagebox.showerror(
-                "Não foi possível criar", "Já existe um arquivo nesse local.", parent=self.root,
-            )
+            show_alert(self.root, "Não foi possível criar", "Já existe um arquivo nesse local.")
             return
         password = ask_password(self.root, "Criar base", "Escolha uma senha para esta base.", "Continuar")
         if password is None:
@@ -474,7 +560,7 @@ class CadernoApp:
         if confirmation is None:
             return
         if not password or password != confirmation:
-            messagebox.showerror("Não foi possível criar", "A senha está vazia ou as confirmações não coincidem.", parent=self.root)
+            show_alert(self.root, "Não foi possível criar", "A senha está vazia ou as confirmações não coincidem.")
             return
         if not self._confirm_pending_changes():
             return
@@ -487,18 +573,18 @@ class CadernoApp:
         try:
             session = create_vault(Path(target), password, VaultSnapshot(document))
         except FileExistsError:
-            messagebox.showerror("Não foi possível criar", "Já existe um arquivo nesse local.", parent=self.root)
+            show_alert(self.root, "Não foi possível criar", "Já existe um arquivo nesse local.")
             return
         except DurabilityUncertainError:
-            messagebox.showwarning(
+            show_alert(
+                self.root,
                 "Gravação incerta",
                 "O arquivo pode ter sido criado, mas não foi possível confirmar sua gravação. "
                 "Não tente sobrescrevê-lo; escolha-o e tente abri-lo para validar.",
-                parent=self.root,
             )
             return
         except Exception:
-            messagebox.showerror("Não foi possível criar", "Verifique o local escolhido e tente novamente.", parent=self.root)
+            show_alert(self.root, "Não foi possível criar", "Verifique o local escolhido e tente novamente.")
             return
         self._activate(session)
         self._remember_path(Path(target))
@@ -518,10 +604,10 @@ class CadernoApp:
     def unlock(self, path: Path):
         """Abre um cofre; mensagens de falha não revelam detalhes internos do arquivo."""
         if not self._path_allowed_in_test_profile(path):
-            messagebox.showerror(
+            show_alert(
+                self.root,
                 "Arquivo fora da pasta de teste",
                 "No perfil de teste, escolha um arquivo dentro da pasta de teste indicada no Terminal.",
-                parent=self.root,
             )
             return
         if self._is_current_vault(path):
@@ -532,10 +618,10 @@ class CadernoApp:
         try:
             session = open_vault(path, password)
         except Exception:
-            messagebox.showerror(
+            show_alert(
+                self.root,
                 "Não foi possível abrir a base",
                 "A senha pode estar incorreta ou o arquivo pode estar inválido ou indisponível.",
-                parent=self.root,
             )
             return
         if not self._confirm_pending_changes():
@@ -569,9 +655,7 @@ class CadernoApp:
         try:
             save_last_vault(path)
         except OSError:
-            messagebox.showwarning(
-                "Base aberta", "A base está aberta, mas não foi possível lembrar este caminho.", parent=self.root
-            )
+            show_alert(self.root, "Base aberta", "A base está aberta, mas não foi possível lembrar este caminho.")
 
     def _activate(self, session: VaultSession):
         if self.session is not None:
@@ -649,12 +733,12 @@ class CadernoApp:
         """Pede um nome e persiste uma coleção sem alterar notas existentes."""
         if self.session is None or not self._confirm_pending_changes():
             return False
-        name = simpledialog.askstring("Nova coleção", "Nome da coleção:", parent=self.root)
+        name = ask_text(self.root, "Nova coleção", "Nome da coleção:")
         if name is None:
             return False
         name = name.strip()
         if not name or len(name) > 4096:
-            messagebox.showerror("Nome inválido", "Informe um nome de até 4096 caracteres.", parent=self.root)
+            show_alert(self.root, "Nome inválido", "Informe um nome de até 4096 caracteres.")
             return False
         current_snapshot = self.session.snapshot
         document = current_snapshot.document
@@ -669,16 +753,10 @@ class CadernoApp:
             self.update_summary(self.session.snapshot.document)
             self._render_collection_list()
             self.refresh_notes()
-            messagebox.showwarning(
-                "Gravação incerta", "A coleção está visível na base; confira o arquivo antes de fechar.",
-                parent=self.root,
-            )
+            show_alert(self.root, "Gravação incerta", "A coleção está visível na base; confira o arquivo antes de fechar.")
             return False
         except Exception:
-            messagebox.showerror(
-                "Não foi possível criar", "A coleção não foi salva. A base pode ter mudado ou estar indisponível.",
-                parent=self.root,
-            )
+            show_alert(self.root, "Não foi possível criar", "A coleção não foi salva. A base pode ter mudado ou estar indisponível.")
             return False
         self.update_summary(self.session.snapshot.document)
         self._render_collection_list()
@@ -972,12 +1050,12 @@ class CadernoApp:
         title, body = self._editor_values()
         title = title.strip()
         if not title:
-            messagebox.showerror("Título necessário", "Dê um título à nota antes de salvar.", parent=self.root)
+            show_alert(self.root, "Título necessário", "Dê um título à nota antes de salvar.")
             self.title_entry.focus_set()
             return False
         collection_id, tags = self._editor_metadata()
         if any(len(tag) > 256 for tag in tags):
-            messagebox.showerror("Hashtag inválida", "Cada hashtag pode ter até 256 caracteres.", parent=self.root)
+            show_alert(self.root, "Hashtag inválida", "Cada hashtag pode ter até 256 caracteres.")
             self.tags_entry.focus_set()
             return False
         snapshot = self.session.snapshot
@@ -987,17 +1065,18 @@ class CadernoApp:
             self.session.save(VaultSnapshot(document, snapshot.attachments))
         except DurabilityUncertainError:
             self._mark_entry_saved(entry, title, body)
-            messagebox.showwarning(
+            show_alert(
+                self.root,
                 "Gravação incerta",
                 "A alteração está visível no arquivo, mas a confirmação de durabilidade falhou. "
-                "Não repita a edição; confira a base antes de fechar o aplicativo.", parent=self.root,
+                "Não repita a edição; confira a base antes de fechar o aplicativo.",
             )
             return False
         except Exception:
-            messagebox.showerror(
+            show_alert(
+                self.root,
                 "Não foi possível salvar",
                 "O rascunho continua no editor. A base pode ter mudado ou estar indisponível.",
-                parent=self.root,
             )
             return False
         self._mark_entry_saved(entry, title, body)
@@ -1105,9 +1184,9 @@ class CadernoApp:
         except OSError:
             located = False
         if not located:
-            messagebox.showinfo(
+            show_alert(
+                self.root,
                 "Base não localizada", "A última base usada não foi encontrada. Escolha uma base ou crie outra.",
-                parent=self.root,
             )
             return
         self.unlock(path)

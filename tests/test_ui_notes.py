@@ -76,8 +76,8 @@ def test_note_create_edit_close_and_reopen_persist_in_real_vault(tmp_path, monke
     ),))
     session = create_vault(path, "synthetic-password", initial)
     app = app_with_editor(session)
-    monkeypatch.setattr(ui.messagebox, "showerror", Mock())
-    monkeypatch.setattr(ui.messagebox, "showwarning", Mock())
+    monkeypatch.setattr(ui, "show_alert", Mock())
+    monkeypatch.setattr(ui, "show_alert", Mock())
 
     app.title_entry.value = "Nota sintética"
     app.body_editor.value = "Primeira versão"
@@ -107,11 +107,11 @@ def test_note_create_edit_close_and_reopen_persist_in_real_vault(tmp_path, monke
 
     monkeypatch.setenv("CADERNO_UI_TEST_PROFILE", str(tmp_path))
     errors = Mock()
-    monkeypatch.setattr(ui.messagebox, "showerror", errors)
+    monkeypatch.setattr(ui, "show_alert", errors)
     monkeypatch.setattr(ui, "ask_password", lambda *_args: "wrong-synthetic-password")
     app.unlock(path)
     assert app.session is None
-    assert "wrong-synthetic-password" not in errors.call_args.args[1]
+    assert "wrong-synthetic-password" not in errors.call_args.args[2]
 
     monkeypatch.setattr(ui, "ask_password", lambda *_args: "synthetic-password")
     app.unlock(path)
@@ -136,7 +136,7 @@ def test_collection_and_tags_edits_are_confirmed_and_persisted(tmp_path, monkeyp
     app.body_editor.value = "Texto sintético"
     app.collection_choice.value = "collection-project"
     app.tags_entry.value = "#ideia, #pesquisa, #ideia"
-    monkeypatch.setattr(ui.messagebox, "showerror", Mock())
+    monkeypatch.setattr(ui, "show_alert", Mock())
 
     assert app.save_entry()
     saved_entry = session.snapshot.document["entries"][0]
@@ -170,7 +170,7 @@ def test_add_collection_persists_real_vault_and_rejects_duplicate_name(tmp_path,
     show_alert = Mock()
     monkeypatch.setattr(ui, "show_alert", show_alert)
     ask_name = Mock(side_effect=("Projetos", " geral "))
-    monkeypatch.setattr(ui.simpledialog, "askstring", ask_name)
+    monkeypatch.setattr(ui, "ask_text", ask_name)
     save = Mock(wraps=session.save)
     session.save = save
 
@@ -196,14 +196,14 @@ def test_tag_over_schema_limit_keeps_draft_and_skips_persistence(monkeypatch):
     app.title_entry.value = "Nota válida"
     app.tags_entry.value = "#" + "x" * 257
     showerror = Mock()
-    monkeypatch.setattr(ui.messagebox, "showerror", showerror)
+    monkeypatch.setattr(ui, "show_alert", showerror)
 
     assert not app.save_entry()
 
     session.save.assert_not_called()
     assert app.tags_entry.value == "#" + "x" * 257
     showerror.assert_called_once_with(
-        "Hashtag inválida", "Cada hashtag pode ter até 256 caracteres.", parent=app.root,
+        app.root, "Hashtag inválida", "Cada hashtag pode ter até 256 caracteres.",
     )
 
 
@@ -229,7 +229,7 @@ def test_stale_ui_session_keeps_draft_without_overwriting_external_save(tmp_path
     })
     external_session.save(VaultSnapshot(external_document))
     showerror = Mock()
-    monkeypatch.setattr(ui.messagebox, "showerror", showerror)
+    monkeypatch.setattr(ui, "show_alert", showerror)
 
     assert not app.save_entry()
 
@@ -238,7 +238,7 @@ def test_stale_ui_session_keeps_draft_without_overwriting_external_save(tmp_path
     assert app.saved_title == "" and app.active_entry_id is None
     reader = open_vault(path, "synthetic-password")
     assert [entry["title"] for entry in reader.snapshot.document["entries"]] == ["Alteração externa"]
-    assert "Rascunho local" not in showerror.call_args.args[1]
+    assert "Rascunho local" not in showerror.call_args.args[2]
     reader.close()
     external_session.close()
     session.close()
@@ -260,7 +260,7 @@ def test_ui_treats_post_replace_durability_error_as_visible_save(tmp_path, monke
         vault_api, "_sync_parent", Mock(side_effect=DurabilityUncertainError("synthetic")),
     )
     warning = Mock()
-    monkeypatch.setattr(ui.messagebox, "showwarning", warning)
+    monkeypatch.setattr(ui, "show_alert", warning)
 
     assert not app.save_entry()
 

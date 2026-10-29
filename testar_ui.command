@@ -63,8 +63,8 @@ export CADERNO_CONFIG_DIR="$TEST_DATA_DIR"
 export CADERNO_UI_TEST_PROFILE="$TEST_DATA_DIR"
 printf '\nAbrindo o Caderno com perfil de teste em: %s\n' "$TEST_DATA_DIR"
 printf 'Use somente cofres sintéticos neste perfil de teste.\n\n'
-printf 'Na janela, crie uma coleção pelo +, associe-a a uma nota e informe hashtags como #ideia, #projeto.\n'
-printf 'Tente criar outra coleção com o mesmo nome, inclusive mudando maiúsculas: deve aparecer um popup próprio do Caderno, com cores e fontes do tema, e ela não deve ser criada.\n'
+printf 'Na janela, crie uma coleção pelo +: a entrada do nome e os alertas devem usar diálogos do próprio Caderno, com cores e fontes do tema. Escape cancela a entrada; Enter ou Criar confirma.\n'
+printf 'Associe a coleção a uma nota e informe hashtags como #ideia, #projeto. Tente criar outra coleção com o mesmo nome, inclusive mudando maiúsculas: o popup informa que ela já existe e não a cria.\n'
 printf 'No seletor de coleção, teste ⌘S para salvar e Escape para abrir as opções de alterações pendentes.\n'
 printf 'Salve, feche e reabra a base: coleção e hashtags devem continuar na nota.\n\n'
 "$PYTHON_BIN" -m caderno
