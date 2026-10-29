@@ -224,6 +224,33 @@ def test_password_dialog_escape_and_window_close_cancel_without_value(monkeypatc
     assert closed.result is None and closed.window.destroyed
 
 
+def test_alert_dialog_uses_theme_tokens_and_dismisses_with_keyboard(monkeypatch):
+    install_dialog_widgets(monkeypatch)
+    labels = []
+    buttons = []
+    monkeypatch.setattr(
+        ui.tk, "Label",
+        lambda *_args, **options: labels.append(options) or FakeDialogWidget(**options),
+    )
+    make_button = Mock(side_effect=lambda *args, **kwargs: buttons.append((args, kwargs)) or FakeDialogWidget())
+    monkeypatch.setattr(ui, "make_button", make_button)
+
+    dialog = ui.AlertDialog(FakePasswordParent(), "Coleção existente", "A coleção já existe.")
+
+    assert dialog.window.geometry_value == "460x220+460+470"
+    assert labels[0]["bg"] == ui.THEME.state_icon_background
+    assert labels[0]["fg"] == ui.THEME.state_icon_foreground
+    assert labels[1]["bg"] == ui.THEME.state_panel
+    assert labels[1]["fg"] == ui.THEME.state_title
+    assert labels[1]["font"] == ui.THEME.font_heading
+    assert labels[2]["fg"] == ui.THEME.muted
+    assert labels[2]["font"] == ui.THEME.font_body
+    assert buttons[0][0][1:3] == ("Entendi", "primary")
+    assert dialog.window.lifecycle == ["show", "grab", "focus_scheduled"]
+    dialog.window.bindings["<Escape>"](None)
+    assert dialog.window.destroyed
+
+
 def test_unsaved_dialog_binds_save_discard_and_cancel_shortcuts(monkeypatch):
     install_dialog_widgets(monkeypatch)
     monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
@@ -707,16 +734,24 @@ def test_hashtag_parser_trims_prefixes_and_removes_duplicates():
     assert ui.CadernoApp._parse_tags(" #Ideia, projeto, ##Ideia, , # ") == ["Ideia", "projeto"]
 
 
-def test_duplicate_collection_names_get_distinct_editor_choices():
+def test_collection_editor_labels_avoid_generated_and_literal_suffix_collisions():
     document = {"collections": [
         {"id": "collection-one", "name": "Ideias"},
         {"id": "collection-two", "name": "Ideias"},
+        {"id": "collection-literal", "name": "Ideias · 1"},
+        {"id": "collection-nested", "name": "Ideias · 1 (2)"},
     ]}
 
     options = ui.CadernoApp._collection_options(document)
+    identifiers_by_label = dict(options)
 
-    assert len({label for label, _ident in options}) == 2
-    assert {ident for _label, ident in options} == {"collection-one", "collection-two"}
+    assert len({label for label, _ident in options}) == len(options)
+    assert {ident for _label, ident in options} == {
+        "collection-one", "collection-two", "collection-literal", "collection-nested",
+    }
+    assert identifiers_by_label["Ideias · 1"] == "collection-one"
+    assert identifiers_by_label["Ideias · 1 (2)"] == "collection-literal"
+    assert identifiers_by_label["Ideias · 1 (2) (2)"] == "collection-nested"
 
 
 def test_note_editor_binds_save_and_cancel_shortcuts_to_all_editable_fields(monkeypatch):
@@ -736,12 +771,12 @@ def test_note_editor_binds_save_and_cancel_shortcuts_to_all_editable_fields(monk
 
     ui.CadernoApp._render_note_editor(app, None)
 
-    for field in (app.title_entry, app.tags_entry, app.body_editor):
+    for field in (app.title_entry, app.tags_entry, app.collection_selector, app.body_editor):
         assert set(field.bindings) == {"<Command-s>", "<Escape>"}
         field.bindings["<Command-s>"](None)
         field.bindings["<Escape>"](None)
-    assert app.save_entry.call_count == 3
-    assert app._cancel_edit_shortcut.call_count == 3
+    assert app.save_entry.call_count == 4
+    assert app._cancel_edit_shortcut.call_count == 4
 
 
 def test_note_editor_connects_vertical_scrollbar_to_text_widget(monkeypatch):

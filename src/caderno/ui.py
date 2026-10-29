@@ -57,6 +57,8 @@ class UILayout:
     password_dialog_size: tuple
     password_dialog_padding: int
     password_prompt_wrap: int
+    alert_dialog_size: tuple
+    alert_dialog_padding: int
     unsaved_dialog_size: tuple
     unsaved_dialog_padding: int
     notes_list_width: int
@@ -164,6 +166,7 @@ THEME = UITheme(
         welcome_title_padding=(9, 4), summary_vertical_padding=(27, 23),
         password_dialog_size=(480, 300), password_dialog_padding=24,
         password_prompt_wrap=380,
+        alert_dialog_size=(460, 220), alert_dialog_padding=24,
         unsaved_dialog_size=(520, 220), unsaved_dialog_padding=24,
         notes_list_width=190, notes_list_gap=18,
     ),
@@ -259,6 +262,78 @@ def ask_password(parent, title: str, prompt: str, submit_label: str) -> str | No
     dialog = PasswordDialog(parent, title, prompt, submit_label)
     parent.wait_window(dialog.window)
     return dialog.result
+
+
+class AlertDialog:
+    """Exibe um alerta modal com as cores, fontes e botões do tema do app."""
+
+    def __init__(self, parent, title: str, message: str):
+        self.window = tk.Toplevel(parent)
+        self.window.withdraw()
+        self.window.title(title)
+        self.window.configure(bg=THEME.paper)
+        self.window.resizable(False, False)
+        self.window.transient(parent)
+        self._build_content(title, message)
+        self.window.bind("<Return>", self._dismiss_event)
+        self.window.bind("<Escape>", self._dismiss_event)
+        self.window.protocol("WM_DELETE_WINDOW", self.dismiss)
+        self._center_on_parent(parent)
+        self.window.deiconify()
+        self.window.grab_set()
+        self.window.after_idle(self.dismiss_button.focus_set)
+
+    def _build_content(self, title: str, message: str):
+        width, height = THEME.layout.alert_dialog_size
+        self.window.geometry(f"{width}x{height}")
+        panel = tk.Frame(
+            self.window, bg=THEME.state_panel, padx=THEME.layout.alert_dialog_padding, pady=20,
+        )
+        panel.pack(fill="both", expand=True, padx=18, pady=18)
+        content = tk.Frame(panel, bg=THEME.state_panel)
+        content.pack(fill="both", expand=True)
+        tk.Label(
+            content, text="!", bg=THEME.state_icon_background,
+            fg=THEME.state_icon_foreground, font=THEME.font_icon, width=2,
+        ).pack(side="left", anchor="n", padx=(0, 12))
+        details = tk.Frame(content, bg=THEME.state_panel)
+        details.pack(side="left", fill="both", expand=True)
+        tk.Label(
+            details, text=title, bg=THEME.state_panel,
+            fg=THEME.state_title, font=THEME.font_heading,
+        ).pack(anchor="w", pady=(0, 8))
+        tk.Label(
+            details, text=message, bg=THEME.state_panel, fg=THEME.muted,
+            font=THEME.font_body, wraplength=width - 2 * (18 + THEME.layout.alert_dialog_padding) - 60,
+            justify="left",
+        ).pack(anchor="w")
+        actions = tk.Frame(panel, bg=THEME.state_panel)
+        actions.pack(fill="x", pady=(16, 0))
+        self.dismiss_button = make_button(
+            actions, "Entendi", "primary", pady=8, command=self.dismiss,
+        )
+        self.dismiss_button.pack(side="right")
+
+    def _center_on_parent(self, parent):
+        self.window.update_idletasks()
+        width, height = THEME.layout.alert_dialog_size
+        x = parent.winfo_rootx() + max((parent.winfo_width() - width) // 2, 0)
+        y = parent.winfo_rooty() + max((parent.winfo_height() - height) // 2, 0)
+        self.window.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _dismiss_event(self, _event=None):
+        self.dismiss()
+        return "break"
+
+    def dismiss(self):
+        """Fecha o alerta pelo botão, Escape, Enter ou controle da janela."""
+        self.window.destroy()
+
+
+def show_alert(parent, title: str, message: str) -> None:
+    """Mostra um alerta modal seguindo o tema da interface."""
+    dialog = AlertDialog(parent, title, message)
+    parent.wait_window(dialog.window)
 
 
 class UnsavedChangesDialog:
@@ -584,7 +659,7 @@ class CadernoApp:
         current_snapshot = self.session.snapshot
         document = current_snapshot.document
         if any(item["name"].casefold() == name.casefold() for item in document["collections"]):
-            messagebox.showerror("Coleção existente", "Já existe uma coleção com esse nome.", parent=self.root)
+            show_alert(self.root, "Coleção existente", f"Já existe uma coleção chamada “{name}”.")
             return False
         document["collections"].append({"id": str(uuid4()), "name": name})
         try:
@@ -734,10 +809,11 @@ class CadernoApp:
             collection_column, text="Coleção", bg=THEME.state_panel,
             fg=THEME.ink, font=THEME.font_label,
         ).pack(anchor="w", pady=(0, 4))
-        ttk.Combobox(
+        self.collection_selector = ttk.Combobox(
             collection_column, textvariable=self.collection_choice,
             values=[label for label, _ident in options], state="readonly", width=14,
-        ).pack(fill="x")
+        )
+        self.collection_selector.pack(fill="x")
         tk.Label(
             tags_column, text="Hashtags", bg=THEME.state_panel,
             fg=THEME.ink, font=THEME.font_label,
@@ -771,7 +847,7 @@ class CadernoApp:
         body_scrollbar.pack(side="right", fill="y")
         self.body_editor.configure(yscrollcommand=body_scrollbar.set)
         self.body_editor.insert("1.0", body)
-        for widget in (self.title_entry, self.tags_entry, self.body_editor):
+        for widget in (self.title_entry, self.tags_entry, self.collection_selector, self.body_editor):
             widget.bind("<Command-s>", self._save_shortcut)
             widget.bind("<Escape>", self._cancel_edit_shortcut)
 
@@ -788,7 +864,7 @@ class CadernoApp:
 
     @staticmethod
     def _collection_options(document):
-        """Monta rótulos selecionáveis e diferencia nomes de coleção duplicados."""
+        """Monta opções selecionáveis com rótulos únicos para cada coleção."""
         collections = document["collections"]
         if not collections:
             return [("Geral", None)]
@@ -797,11 +873,18 @@ class CadernoApp:
             counts[item["name"]] = counts.get(item["name"], 0) + 1
         options = []
         occurrences = {}
+        used_labels = set()
         for item in collections:
             label = item["name"]
             if counts[label] > 1:
                 occurrences[label] = occurrences.get(label, 0) + 1
                 label = f"{label} · {occurrences[label]}"
+            base_label = label
+            suffix = 2
+            while label in used_labels:
+                label = f"{base_label} ({suffix})"
+                suffix += 1
+            used_labels.add(label)
             options.append((label, item["id"]))
         return options
 

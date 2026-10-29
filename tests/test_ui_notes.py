@@ -167,13 +167,20 @@ def test_add_collection_persists_real_vault_and_rejects_duplicate_name(tmp_path,
         "attachments": [], "entries": [],
     }))
     app = app_with_editor(session)
-    monkeypatch.setattr(ui.messagebox, "showerror", Mock())
+    show_alert = Mock()
+    monkeypatch.setattr(ui, "show_alert", show_alert)
     ask_name = Mock(side_effect=("Projetos", " geral "))
     monkeypatch.setattr(ui.simpledialog, "askstring", ask_name)
+    save = Mock(wraps=session.save)
+    session.save = save
 
     assert app.add_collection()
     assert not app.add_collection()
     assert [item["name"] for item in session.snapshot.document["collections"]] == ["Geral", "Projetos"]
+    assert save.call_count == 1
+    show_alert.assert_called_once_with(
+        app.root, "Coleção existente", "Já existe uma coleção chamada “geral”.",
+    )
     app.refresh_notes.assert_called_once_with()
     session.close()
 
