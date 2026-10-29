@@ -32,7 +32,7 @@ def app_with_editor(session):
     app.saved_body = ""
     initial_collection = session.snapshot.document["collections"][0]["id"]
     app.collection_choice = FakeEntry(initial_collection)
-    app.collection_ids_by_label = {initial_collection: initial_collection}
+    app.collection_id_by_label = {initial_collection: initial_collection}
     app.tags_entry = FakeEntry()
     app.saved_collection_id = initial_collection
     app.saved_tags = []

@@ -345,7 +345,7 @@ class CadernoApp:
         self.saved_body = ""
         self.saved_collection_id = None
         self.saved_tags = []
-        self.collection_ids_by_label = {}
+        self.collection_id_by_label = {}
         self.editor_metadata_ready = False
         root.title("Caderno de Pensamentos")
         root.geometry(f"{THEME.layout.window_size[0]}x{THEME.layout.window_size[1]}")
@@ -648,7 +648,7 @@ class CadernoApp:
             collections = self.session.snapshot.document["collections"] if self.session else []
             return (collections[0]["id"] if collections else None), []
         label = self.collection_choice.get()
-        collection_id = self.collection_ids_by_label.get(label, label)
+        collection_id = self.collection_id_by_label.get(label, label)
         tags = self._parse_tags(self.tags_entry.get())
         collections = self.session.snapshot.document["collections"]
         available_ids = {item["id"] for item in collections}
@@ -698,7 +698,7 @@ class CadernoApp:
     def _initialize_editor_metadata(self, entry):
         document = self.session.snapshot.document
         self.collection_options = self._collection_options(document)
-        self.collection_ids_by_label = dict(self.collection_options)
+        self.collection_id_by_label = dict(self.collection_options)
         collection_id = entry["collection_id"] if entry else self.collection_options[0][1]
         selected_label = next(
             (label for label, ident in self.collection_options if ident == collection_id),
@@ -771,7 +771,7 @@ class CadernoApp:
         body_scrollbar.pack(side="right", fill="y")
         self.body_editor.configure(yscrollcommand=body_scrollbar.set)
         self.body_editor.insert("1.0", body)
-        for widget in (self.title_entry, self.body_editor):
+        for widget in (self.title_entry, self.tags_entry, self.body_editor):
             widget.bind("<Command-s>", self._save_shortcut)
             widget.bind("<Escape>", self._cancel_edit_shortcut)
 

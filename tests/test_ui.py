@@ -719,7 +719,7 @@ def test_duplicate_collection_names_get_distinct_editor_choices():
     assert {ident for _label, ident in options} == {"collection-one", "collection-two"}
 
 
-def test_note_editor_binds_save_and_cancel_shortcuts_to_both_fields(monkeypatch):
+def test_note_editor_binds_save_and_cancel_shortcuts_to_all_editable_fields(monkeypatch):
     app = bare_app()
     app.editor_panel = FakeEditorWidget()
     app.session = Mock(snapshot=VaultSnapshot({
@@ -736,12 +736,12 @@ def test_note_editor_binds_save_and_cancel_shortcuts_to_both_fields(monkeypatch)
 
     ui.CadernoApp._render_note_editor(app, None)
 
-    for field in (app.title_entry, app.body_editor):
+    for field in (app.title_entry, app.tags_entry, app.body_editor):
         assert set(field.bindings) == {"<Command-s>", "<Escape>"}
         field.bindings["<Command-s>"](None)
         field.bindings["<Escape>"](None)
-    assert app.save_entry.call_count == 2
-    assert app._cancel_edit_shortcut.call_count == 2
+    assert app.save_entry.call_count == 3
+    assert app._cancel_edit_shortcut.call_count == 3
 
 
 def test_note_editor_connects_vertical_scrollbar_to_text_widget(monkeypatch):
