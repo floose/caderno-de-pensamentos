@@ -76,6 +76,7 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 - [x] Implementar filtros temporários por coleção e hashtag, combináveis com a busca.
 - [x] Implementar opções de ordenação por data de edição, criação e título, em ambos os sentidos.
 - [x] Implementar favoritos persistentes no editor, protegidos por salvar/descartar/cancelar, e filtro combinável com coleção, hashtag e busca.
+- [x] Implementar modo de foco que expande a escrita na janela atual e restaura a navegação sem perder o rascunho.
 - [ ] Implementar editor e visualização Markdown, incluindo blocos de código e equações.
 - [ ] Implementar anexar imagens por arquivo e colagem da área de transferência.
 - [ ] Implementar calendário baseado nas datas dos textos.
@@ -127,7 +128,7 @@ Produzir o pacote em um Mac arm64, validar as arquiteturas das dependências e t
 - A revisão cética reproduziu defeitos de UI que foram corrigidos com regressões: o seletor recebe `⌘S`/`Escape`; rótulos permanecem únicos mesmo com colisões entre sufixos gerados e nomes literais; tentativas de criar nomes duplicados mostram alerta e não persistem outra coleção.
 - Alertas de erro/aviso/informação e a entrada de nome de coleção usam `Toplevel` próprios do app, com estilo compartilhado e confirmação/cancelamento por teclado. Senha e alterações pendentes também usam modais próprios. A suíte cobre tema, modalidade e atalhos; o usuário confirmou a aparência do alerta de duplicidade. O novo modal de texto deve ser conferido pela janela real via `testar_ui.command`.
 - Os seletores de abrir/criar base e coleção agora são janelas do próprio app, sem `filedialog` ou `ttk`; a navegação permite filtrar `.cpv` e respeita a raiz do perfil sintético. As preferências selecionam o diretório convencional de cada plataforma, com override para testes.
-- 88 testes focados passaram após a implementação de favoritos. A build arm64 e os probes UI/Tk e CPV1 empacotados passaram; o smoke confirmou salvar e reabrir uma nota favorita. A reauditoria não encontrou alertas/painéis nativos: produção usa modais `tk.Toplevel`; interação física com a janela principal permanece pendente.
+- 89 testes focados passaram após o modo de foco. A build arm64 e os probes UI/Tk + CPV1 empacotados confirmaram ocultar/restaurar painéis, preservar o rascunho e salvar no modo expandido. Uma primeira execução identificou ordem inválida na restauração dos painéis, que foi corrigida antes da build final. A reauditoria não encontrou alertas/painéis nativos: produção usa modais `tk.Toplevel`; interação física com a janela principal permanece pendente.
 
 ### Processo de desenvolvimento da UI e das funcionalidades
 
@@ -141,7 +142,7 @@ Produzir o pacote em um Mac arm64, validar as arquiteturas das dependências e t
 
 1. Criar, selecionar, abrir e fechar base; tratar base ausente, senha incorreta e arquivo inválido; guardar apenas o último caminho.
 2. Listar, criar, editar e excluir uma nota; salvar, fechar e reabrir sem perder conteúdo.
-3. [x] Organizar notas em coleções e hashtags; suportar rascunhos e favoritos persistentes. Datas continuam pendentes.
+3. [x] Organizar notas em coleções e hashtags; suportar rascunhos, favoritos persistentes e modo de foco. Datas continuam pendentes.
 4. Buscar, filtrar e ordenar notas; editar e visualizar Markdown.
 5. Anexar e visualizar imagens; adicionar o calendário baseado nas datas das notas.
 6. Completar backup/restauração, troca de senha na interface, acessibilidade e comportamento ao fechar o aplicativo.
@@ -192,7 +193,7 @@ Legenda: ██ trabalho previsto; .. sem atividade prevista.
 ## Acompanhamento
 
 - **Estado atual:** primeira versão restrita a Apple Silicon (`arm64`), macOS 14 Sonoma ou posterior, Tkinter e distribuição inicial para uso próprio/testes.
-- **Estado da UI:** criar, escolher, abrir e fechar base estão implementados. Notas podem ser listadas, criadas e editadas com rascunho local e salvamento explícito; coleção, hashtags e favoritos são editáveis e persistidos, e o fechamento protege alterações pendentes inclusive nos metadados. Busca, filtros por coleção/hashtag/favoritos e ordenação por data de edição, criação ou título estão implementados. Alertas, entradas de texto, filtros, seletores de coleção, ordenação e navegação de bases usam modais próprios do app. 88 testes focados passaram com fixtures sintéticas, junto com a build arm64 e os smokes empacotados; o roteiro de janela real está em [`testar_ui.command`](testar_ui.command).
+- **Estado da UI:** criar, escolher, abrir e fechar base estão implementados. Notas podem ser listadas, criadas e editadas com rascunho local e salvamento explícito; coleção, hashtags e favoritos são editáveis e persistidos, e o fechamento protege alterações pendentes inclusive nos metadados. O modo de foco amplia a escrita e preserva o mesmo rascunho. Busca, filtros por coleção/hashtag/favoritos e ordenação por data de edição, criação ou título estão implementados. Alertas, entradas de texto, filtros, seletores de coleção, ordenação e navegação de bases usam modais próprios do app. 89 testes focados passaram, junto com a build arm64 e os smokes empacotados; o roteiro para janela real está em [`testar_ui.command`](testar_ui.command).
 - **Estado do cofre:** protótipo CPV1 isolado, testado com backend PyNaCl e fixtures sintéticas. Resultados e pendências atuais estão em [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
 - **Próximo marco:** repetir na janela do `.app` extraído o fluxo de nomes duplicados, atalhos no seletor e persistência. Validações de sistemas operacionais antigos ficam adiadas para distribuição.
 - **Atualizado em:** 2026-10-29.

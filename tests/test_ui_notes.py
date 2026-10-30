@@ -96,6 +96,8 @@ def app_with_editor(session):
     app.favorite_choice = False
     app.saved_favorite = False
     app.favorite_button = Mock()
+    app.focus_mode = False
+    app._focus_pack_info = {}
     app.editor_metadata_ready = True
     app.title_entry = FakeEntry()
     app.body_editor = FakeBody()

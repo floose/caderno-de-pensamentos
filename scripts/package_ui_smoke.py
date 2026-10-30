@@ -23,12 +23,13 @@ def _run_ui_flow(profile: Path) -> None:
     try:
         _create_empty_vault(app, vault_path)
         _save_synthetic_note(app)
+        _exercise_note_focus(app)
         _exercise_search_and_filters(app)
         _reject_duplicate_collection(app)
         _close_and_reopen_vault(app, vault_path)
     finally:
         if app.session is not None:
-            app.close_vault()
+            app.session.close()
         root.destroy()
 
 
@@ -50,6 +51,22 @@ def _save_synthetic_note(app) -> None:
     assert entry["body_markdown"] == "Conteúdo sintético do smoke test."
     assert entry["tags"] == ["teste", "empacotamento"]
     assert entry["favorite"] is True
+
+
+def _exercise_note_focus(app) -> None:
+    app.body_editor.insert("end", " Texto escrito no modo expandido.")
+    app.enter_note_focus()
+    assert app.focus_mode and app.sidebar.winfo_manager() == ""
+    assert app.note_list_panel.winfo_manager() == ""
+    assert app.body_editor.get("1.0", "end-1c").endswith("modo expandido.")
+    assert app._exit_focus_shortcut() == "break"
+    assert not app.focus_mode and app.sidebar.winfo_manager() == "pack"
+    assert app.body_editor.get("1.0", "end-1c").endswith("modo expandido.")
+
+    app.enter_note_focus()
+    assert app.save_entry()
+    assert app.focus_mode and app.sidebar.winfo_manager() == ""
+    app.exit_note_focus()
 
 
 def _reject_duplicate_collection(app) -> None:
@@ -102,7 +119,9 @@ def _close_and_reopen_vault(app, vault_path: Path) -> None:
     assert entry["favorite"] is True
     assert app.close_vault()
     persisted = open_vault(vault_path, "synthetic-package-ui-password")
-    assert persisted.snapshot.document["entries"][0]["body_markdown"] == "Conteúdo sintético do smoke test."
+    assert persisted.snapshot.document["entries"][0]["body_markdown"] == (
+        "Conteúdo sintético do smoke test. Texto escrito no modo expandido."
+    )
     persisted.close()
 
 

@@ -41,6 +41,8 @@ def bare_app():
     app.saved_favorite = False
     app.favorite_button = Mock()
     app.editor_metadata_ready = False
+    app.focus_mode = False
+    app._focus_pack_info = {}
     app._activate = Mock()
     app._remember_path = Mock()
     app.refresh_notes = Mock()
@@ -108,6 +110,29 @@ class FakeEditorWidget:
 
     def yview(self, *_args):
         pass
+
+    def focus_set(self):
+        pass
+
+
+class FakePackWidget(FakeEditorWidget):
+    def __init__(self, **pack_options):
+        super().__init__()
+        self.manager = "pack"
+        self.saved_pack_options = pack_options
+
+    def winfo_manager(self):
+        return self.manager
+
+    def pack_info(self):
+        return {"in": "parent", **self.saved_pack_options}
+
+    def pack_forget(self):
+        self.manager = ""
+
+    def pack(self, **options):
+        self.manager = "pack"
+        self.saved_pack_options = options
 
 
 class FakeSearchEntry(FakeEditorWidget):
@@ -1160,10 +1185,15 @@ def test_note_editor_binds_save_and_cancel_shortcuts_to_all_editable_fields(monk
     for widget_name in ("Label", "Frame", "Entry", "Text", "Scrollbar"):
         monkeypatch.setattr(ui.tk, widget_name, FakeEditorWidget)
     monkeypatch.setattr(ui.tk, "StringVar", FakeStringVar)
-    monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
+    monkeypatch.setattr(
+        ui, "make_button",
+        lambda _parent, label, _variant, pady=0, command=None, **_kwargs:
+        FakeDialogWidget(text=label, command=command),
+    )
 
     ui.CadernoApp._render_note_editor(app, None)
 
+    assert app.focus_button.options["command"] == app.toggle_note_focus
     for field in (
         app.title_entry, app.tags_entry, app.collection_selector,
         app.favorite_button, app.body_editor,
@@ -1173,6 +1203,52 @@ def test_note_editor_binds_save_and_cancel_shortcuts_to_all_editable_fields(monk
         field.bindings["<Escape>"](None)
     assert app.save_entry.call_count == 5
     assert app._cancel_edit_shortcut.call_count == 5
+
+
+def test_note_focus_hides_and_restores_chrome_without_replacing_draft():
+    app = ui.CadernoApp.__new__(ui.CadernoApp)
+    widget_names = (
+        "sidebar", "main_panel", "topbar", "content_panel", "welcome_area",
+        "summary_area", "search_area", "state_area", "note_list_panel",
+        "editor_panel", "title_header", "title_entry", "metadata_panel",
+        "body_label", "body_frame", "body_editor", "focus_button",
+    )
+    for name in widget_names:
+        setattr(app, name, FakePackWidget(side="left", fill="both", expand=True))
+    app.title_entry.value = "Título de rascunho"
+    app.body_editor.value = "Corpo longo de rascunho"
+    app.content_panel.configure_options = {}
+    app.state_area.configure_options = {}
+    app.root = Mock()
+    app.root.bind.return_value = "focus-escape-binding"
+    app.focus_mode = False
+    app._focus_pack_info = {}
+
+    app.enter_note_focus()
+
+    assert app.focus_mode
+    assert all(getattr(app, name).manager == "" for name in (
+        "sidebar", "topbar", "welcome_area", "summary_area", "search_area",
+        "note_list_panel", "title_header", "title_entry", "metadata_panel", "body_label",
+    ))
+    assert app.body_frame.manager == "pack"
+    assert app.title_entry.value == "Título de rascunho"
+    assert app.body_editor.value == "Corpo longo de rascunho"
+    assert app.focus_button.configure_options["text"] == "Voltar ao caderno"
+
+    assert app._exit_focus_shortcut() == "break"
+
+    assert not app.focus_mode
+    assert all(getattr(app, name).manager == "pack" for name in (
+        "sidebar", "topbar", "welcome_area", "summary_area", "search_area",
+        "note_list_panel", "title_header", "title_entry", "metadata_panel", "body_label",
+    ))
+    assert app.sidebar.saved_pack_options["before"] is app.main_panel
+    assert app.topbar.saved_pack_options["before"] is app.content_panel
+    assert app.title_entry.value == "Título de rascunho"
+    assert app.body_editor.value == "Corpo longo de rascunho"
+    assert app.focus_button.configure_options["text"] == "Expandir escrita"
+    app.root.unbind.assert_called_once_with("<Escape>", "focus-escape-binding")
 
 
 def test_note_editor_connects_vertical_scrollbar_to_text_widget(monkeypatch):

@@ -1030,6 +1030,8 @@ class CadernoApp:
         self.favorites_only = False
         self.sort_mode = DEFAULT_SORT_MODE
         self.editor_metadata_ready = False
+        self.focus_mode = False
+        self._focus_pack_info = {}
         root.title("Caderno de Pensamentos")
         root.geometry(f"{THEME.layout.window_size[0]}x{THEME.layout.window_size[1]}")
         root.minsize(*THEME.layout.minimum_window_size)
@@ -1226,6 +1228,9 @@ class CadernoApp:
 
     def refresh_notes(self):
         """Renderiza a lista e o editor para o snapshot da sessão ativa."""
+        was_focused = self.focus_mode
+        if was_focused:
+            self.exit_note_focus()
         for child in self.state_area.winfo_children():
             child.destroy()
         layout = tk.Frame(self.state_area, bg=THEME.state_panel)
@@ -1240,8 +1245,11 @@ class CadernoApp:
         self._render_note_list(list_panel)
         self.editor_panel = tk.Frame(layout, bg=THEME.state_panel)
         self.editor_panel.pack(side="left", fill="both", expand=True)
+        self.note_list_panel = list_panel
         entry = self._active_entry()
         self._render_note_editor(entry)
+        if was_focused:
+            self.enter_note_focus()
 
     def _reset_search_for_locked_view(self):
         """Limpa a busca ao fechar a base e desativa o campo bloqueado."""
@@ -1543,6 +1551,7 @@ class CadernoApp:
     def _render_title_field(self, title):
         header = tk.Frame(self.editor_panel, bg=THEME.state_panel)
         header.pack(fill="x", pady=(0, 5))
+        self.title_header = header
         tk.Label(
             header, text="Título", bg=THEME.state_panel,
             fg=THEME.ink, font=THEME.font_label,
@@ -1574,6 +1583,7 @@ class CadernoApp:
         selected_label = self.collection_choice.get()
         metadata = tk.Frame(self.editor_panel, bg=THEME.state_panel)
         metadata.pack(fill="x", pady=(0, 8))
+        self.metadata_panel = metadata
         collection_column = tk.Frame(metadata, bg=THEME.state_panel)
         collection_column.pack(side="left", fill="x", expand=True, padx=(0, 8))
         tags_column = tk.Frame(metadata, bg=THEME.state_panel)
@@ -1602,12 +1612,14 @@ class CadernoApp:
         self.editor_metadata_ready = True
 
     def _render_body_field(self, body):
-        tk.Label(
+        self.body_label = tk.Label(
             self.editor_panel, text="Texto", bg=THEME.state_panel,
             fg=THEME.ink, font=THEME.font_label,
-        ).pack(anchor="w", pady=(0, 5))
+        )
+        self.body_label.pack(anchor="w", pady=(0, 5))
         body_frame = tk.Frame(self.editor_panel, bg=THEME.state_panel)
         body_frame.pack(fill="both", expand=True)
+        self.body_frame = body_frame
         self.body_editor = tk.Text(
             body_frame, bg=THEME.panel, fg=THEME.ink,
             insertbackground=THEME.green, font=THEME.font_text, height=8,
@@ -1630,6 +1642,12 @@ class CadernoApp:
     def _render_editor_actions(self):
         actions = tk.Frame(self.editor_panel, bg=THEME.state_panel)
         actions.pack(fill="x", pady=(12, 0))
+        self.editor_actions = actions
+        self.focus_button = make_button(
+            actions, "Expandir escrita", "secondary", pady=8,
+            command=self.toggle_note_focus,
+        )
+        self.focus_button.pack(side="left")
         make_button(
             actions, "Salvar  ⌘S", "primary", pady=8, command=self.save_entry,
         ).pack(side="right")
@@ -1637,6 +1655,85 @@ class CadernoApp:
             actions, "Descartar alterações", "secondary", pady=8,
             command=self.discard_editor_changes,
         ).pack(side="right", padx=(0, 8))
+
+    def toggle_note_focus(self):
+        """Expande ou restaura o editor sem substituir o widget do rascunho."""
+        if self.focus_mode:
+            self.exit_note_focus()
+        else:
+            self.enter_note_focus()
+
+    def enter_note_focus(self):
+        """Oculta a navegação e metadados para ampliar a área de escrita."""
+        if self.focus_mode:
+            return
+        hidden = (
+            self.sidebar, self.topbar, self.welcome_area, self.summary_area,
+            self.search_area, self.note_list_panel, self.title_header,
+            self.title_entry, self.metadata_panel, self.body_label,
+        )
+        self._focus_pack_info = {}
+        for widget in hidden:
+            self._hide_packed_widget(widget, self._focus_restore_anchor(widget))
+        self.content_panel.configure(padx=0, pady=0)
+        self.state_area.configure(padx=0, pady=0)
+        self.body_editor.bind("<Escape>", self._exit_focus_shortcut)
+        self._focus_escape_binding = self.root.bind(
+            "<Escape>", self._exit_focus_shortcut, add="+",
+        )
+        self.focus_mode = True
+        self.focus_button.configure(text="Voltar ao caderno")
+        self.body_editor.focus_set()
+
+    def _focus_restore_anchor(self, widget):
+        anchors = {
+            self.sidebar: self.main_panel,
+            self.topbar: self.content_panel,
+            self.welcome_area: self.summary_area,
+            self.summary_area: self.search_area,
+            self.search_area: self.state_area,
+            self.note_list_panel: self.editor_panel,
+            self.title_header: self.title_entry,
+            self.title_entry: self.metadata_panel,
+            self.metadata_panel: self.body_label,
+            self.body_label: self.body_frame,
+        }
+        return anchors[widget]
+
+    def _hide_packed_widget(self, widget, before=None):
+        if widget.winfo_manager() != "pack":
+            return
+        self._focus_pack_info[widget] = widget.pack_info(), before
+        widget.pack_forget()
+
+    def exit_note_focus(self):
+        """Restaura os painéis ocultos e mantém intacto o rascunho atual."""
+        if not self.focus_mode:
+            return
+        for widget, (options, before) in reversed(tuple(self._focus_pack_info.items())):
+            options = {key: value for key, value in options.items() if key != "in"}
+            if before is not None:
+                options["before"] = before
+            widget.pack(**options)
+        self._focus_pack_info.clear()
+        self.content_panel.configure(
+            padx=THEME.layout.main_horizontal_padding,
+            pady=THEME.layout.main_vertical_padding,
+        )
+        self.state_area.configure(
+            padx=THEME.layout.state_horizontal_padding,
+            pady=THEME.layout.state_vertical_padding,
+        )
+        self.body_editor.bind("<Escape>", self._cancel_edit_shortcut)
+        binding = getattr(self, "_focus_escape_binding", None)
+        if binding:
+            self.root.unbind("<Escape>", binding)
+        self.focus_mode = False
+        self.focus_button.configure(text="Expandir escrita")
+
+    def _exit_focus_shortcut(self, _event=None):
+        self.exit_note_focus()
+        return "break"
 
     @staticmethod
     def _collection_options(document):
@@ -1867,6 +1964,8 @@ class CadernoApp:
         """Fecha a sessão e descarta as referências mantidas pela interface."""
         if not self._confirm_pending_changes():
             return False
+        if self.focus_mode:
+            self.exit_note_focus()
         if self.session is not None:
             self.session.close()
             self.session = None
@@ -1920,6 +2019,7 @@ def build_sidebar(parent: tk.Widget, app: CadernoApp) -> None:
     )
     sidebar.pack(side="left", fill="y")
     sidebar.pack_propagate(False)
+    app.sidebar = sidebar
 
     build_brand(sidebar)
     app.new_entry_button = make_button(
@@ -2014,11 +2114,12 @@ def build_sidebar_status(parent: tk.Widget, app: CadernoApp) -> None:
 def build_main_panel(parent: tk.Widget, app: CadernoApp) -> None:
     main = tk.Frame(parent, bg=THEME.paper)
     main.pack(side="left", fill="both", expand=True)
-    build_topbar(main)
+    app.main_panel = main
+    app.topbar = build_topbar(main)
     build_library(main, app)
 
 
-def build_topbar(parent: tk.Widget) -> None:
+def build_topbar(parent: tk.Widget) -> tk.Frame:
     topbar = tk.Frame(
         parent,
         bg=THEME.paper,
@@ -2042,6 +2143,7 @@ def build_topbar(parent: tk.Widget) -> None:
         fg=THEME.sage,
         font=THEME.font_label,
     ).pack(side="right")
+    return topbar
 
 
 def build_library(parent: tk.Widget, app: CadernoApp) -> None:
@@ -2050,6 +2152,7 @@ def build_library(parent: tk.Widget, app: CadernoApp) -> None:
         pady=THEME.layout.main_vertical_padding,
     )
     content.pack(fill="both", expand=True)
+    app.content_panel = content
     app.welcome_area = tk.Frame(content, bg=THEME.paper)
     app.welcome_area.pack(fill="x")
     build_welcome(app.welcome_area)
