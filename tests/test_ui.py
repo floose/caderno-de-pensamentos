@@ -304,7 +304,9 @@ def test_password_dialog_uses_masked_theme_field_and_styled_actions(monkeypatch)
     ]
     assert dialog.window.geometry_value == "480x300+450+430"
     assert dialog.window.lifecycle == ["show", "grab", "focus_scheduled"]
-    buttons[0].bindings["<Return>"](None)
+    assert dialog.password_entry.bindings["<Return>"] == dialog._submit_event
+    assert dialog.window.bindings["<Return>"] == dialog._submit_event
+    assert dialog.password_entry.bindings["<Return>"](None) == "break"
     assert dialog.result == "synthetic password"
     assert dialog.window.destroyed
 
@@ -1199,9 +1201,13 @@ def test_note_editor_binds_save_and_cancel_shortcuts_to_all_editable_fields(monk
     ui.CadernoApp._render_note_editor(app, entry)
 
     assert app.focus_button.options["command"] == app.toggle_note_focus
+    assert app.focus_button.options["text"] == "Expandir escrita  ⌃⌘E"
     assert app.title_dates.options["text"] == ui.CadernoApp._format_note_dates(entry)
     assert "Criada em 20/10/2026" in app.title_dates.options["text"]
     assert "Modificada em 30/10/2026" in app.title_dates.options["text"]
+    assert app.title_dates.options["text"].count(" às ") == 2
+    for time in app.title_dates.options["text"].split(" às ")[1::2]:
+        assert len(time[:5]) == 5 and time[2] == ":"
     assert app.collection_selector.configure_options == {
         "wraplength": 180, "justify": "left", "anchor": "w",
     }
@@ -1255,7 +1261,7 @@ def test_note_focus_hides_and_restores_chrome_without_replacing_draft():
     assert app.collection_choice.get() == "Projetos"
     assert app.tags_entry.value == "#rascunho"
     assert app.favorite_choice
-    assert app.focus_button.configure_options["text"] == "Voltar ao caderno"
+    assert app.focus_button.configure_options["text"] == "Voltar ao caderno  ⌃⌘E"
     assert app.body_editor.bindings["<Escape>"] == app._exit_focus_shortcut
 
     assert app.body_editor.bindings["<Escape>"](None) == "break"
@@ -1275,7 +1281,7 @@ def test_note_focus_hides_and_restores_chrome_without_replacing_draft():
     assert app.tags_entry.value == "#rascunho"
     assert app.favorite_choice
     assert app.body_editor.bindings["<Escape>"] == app._cancel_edit_shortcut
-    assert app.focus_button.configure_options["text"] == "Expandir escrita"
+    assert app.focus_button.configure_options["text"] == "Expandir escrita  ⌃⌘E"
 
     app.enter_note_focus()
     root_escape = app.root.bind.call_args.args[1]
@@ -1364,6 +1370,66 @@ def test_main_window_applies_minimum_size_from_shared_layout(monkeypatch):
 
     root.geometry.assert_called_once_with("1180x760")
     root.minsize.assert_called_once_with(1000, 620)
+    assert ("<Command-n>", ui.CadernoApp._new_entry_shortcut) in [
+        (call.args[0], call.args[1].__func__)
+        for call in root.bind.call_args_list
+        if hasattr(call.args[1], "__func__")
+    ]
+    assert ("<Control-Command-e>", ui.CadernoApp._toggle_note_focus_shortcut) in [
+        (call.args[0], call.args[1].__func__)
+        for call in root.bind.call_args_list
+        if hasattr(call.args[1], "__func__")
+    ]
+
+
+def test_new_entry_inherits_the_current_collection_after_pending_changes_are_resolved():
+    app = bare_app()
+    app.session = Mock()
+    app._confirm_pending_changes = Mock(return_value=True)
+    app._editor_metadata = Mock(return_value=("collection-current", []))
+
+    app.new_entry()
+
+    assert app.new_entry_collection_id == "collection-current"
+    assert app.active_entry_id is None
+    app.refresh_notes.assert_called_once_with()
+
+
+def test_new_entry_editor_uses_the_inherited_collection(monkeypatch):
+    app = bare_app()
+    app.session = Mock(snapshot=VaultSnapshot({
+        "schema_version": 1,
+        "collections": [
+            {"id": "collection-default", "name": "Geral"},
+            {"id": "collection-current", "name": "Projetos"},
+        ],
+        "attachments": [], "entries": [],
+    }))
+    app.new_entry_collection_id = "collection-current"
+    app.editor_panel = object()
+    monkeypatch.setattr(ui.tk, "StringVar", FakeStringVar)
+
+    ui.CadernoApp._initialize_editor_metadata(app, None)
+
+    assert app.collection_choice.get() == "Projetos"
+    assert app.saved_collection_id == "collection-current"
+
+
+def test_new_note_and_focus_shortcut_handlers_consume_the_key_event():
+    app = bare_app()
+    app.new_entry = Mock()
+    app.toggle_note_focus = Mock()
+    app.session = Mock()
+    app.body_editor = Mock()
+
+    assert app._new_entry_shortcut() == "break"
+    app.new_entry.assert_called_once_with()
+    assert app._toggle_note_focus_shortcut() == "break"
+    app.toggle_note_focus.assert_called_once_with()
+
+    app.session = None
+    assert app._toggle_note_focus_shortcut() == "break"
+    app.toggle_note_focus.assert_called_once_with()
 
 
 def test_locked_and_unlocked_views_choose_the_shared_button_variants():

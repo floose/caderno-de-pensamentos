@@ -16,6 +16,7 @@ else:
 
 ButtonVariant = Literal["primary", "secondary"]
 DEFAULT_SORT_MODE = "updated_desc"
+NOTE_FOCUS_SHORTCUT_LABEL = "⌃⌘E"
 SORT_OPTIONS = (
     ("updated_desc", "Última edição — mais recentes primeiro"),
     ("updated_asc", "Última edição — mais antigas primeiro"),
@@ -246,6 +247,7 @@ class PasswordDialog:
             relief="flat", font=THEME.font_body,
         )
         self.password_entry.pack(fill="x", ipady=7)
+        self.password_entry.bind("<Return>", self._submit_event)
         self._build_actions(panel, submit_label)
 
     def _build_actions(self, parent, submit_label: str):
@@ -1037,6 +1039,8 @@ class CadernoApp:
         root.minsize(*THEME.layout.minimum_window_size)
         root.configure(bg=THEME.paper)
         root.protocol("WM_DELETE_WINDOW", self.close_app)
+        root.bind("<Command-n>", self._new_entry_shortcut)
+        root.bind("<Control-Command-e>", self._toggle_note_focus_shortcut)
         configure_fonts()
         shell = tk.Frame(root, bg=THEME.paper)
         shell.pack(fill="both", expand=True)
@@ -1537,7 +1541,9 @@ class CadernoApp:
         document = self.session.snapshot.document
         self.collection_options = self._collection_options(document)
         self.collection_id_by_label = dict(self.collection_options)
-        collection_id = entry["collection_id"] if entry else self.collection_options[0][1]
+        collection_id = entry["collection_id"] if entry else getattr(
+            self, "new_entry_collection_id", None,
+        ) or self.collection_options[0][1]
         selected_label = next(
             (label for label, ident in self.collection_options if ident == collection_id),
             self.collection_options[0][0],
@@ -1630,7 +1636,8 @@ class CadernoApp:
         )
         self.body_label.pack(side="left")
         self.focus_button = make_button(
-            self.body_header, "Expandir escrita", "secondary", pady=5,
+            self.body_header, f"Expandir escrita  {NOTE_FOCUS_SHORTCUT_LABEL}",
+            "secondary", pady=5,
             command=self.toggle_note_focus,
         )
         self.focus_button.pack(side="right")
@@ -1677,7 +1684,7 @@ class CadernoApp:
     @staticmethod
     def _format_note_date(timestamp: str) -> str:
         parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-        return parsed.astimezone().strftime("%d/%m/%Y")
+        return parsed.astimezone().strftime("%d/%m/%Y às %H:%M")
 
     def toggle_note_focus(self):
         """Expande ou restaura o editor sem substituir o widget do rascunho."""
@@ -1685,6 +1692,15 @@ class CadernoApp:
             self.exit_note_focus()
         else:
             self.enter_note_focus()
+
+    def _new_entry_shortcut(self, _event=None):
+        self.new_entry()
+        return "break"
+
+    def _toggle_note_focus_shortcut(self, _event=None):
+        if self.session is not None and getattr(self, "body_editor", None) is not None:
+            self.toggle_note_focus()
+        return "break"
 
     def enter_note_focus(self):
         """Oculta a navegação e metadados para ampliar a área de escrita."""
@@ -1707,7 +1723,7 @@ class CadernoApp:
             "<Escape>", self._exit_focus_shortcut, add="+",
         )
         self.focus_mode = True
-        self.focus_button.configure(text="Voltar ao caderno")
+        self.focus_button.configure(text=f"Voltar ao caderno  {NOTE_FOCUS_SHORTCUT_LABEL}")
         self.body_editor.focus_set()
 
     def _focus_restore_anchor(self, widget):
@@ -1755,7 +1771,7 @@ class CadernoApp:
         if binding:
             self.root.unbind("<Escape>", binding)
         self.focus_mode = False
-        self.focus_button.configure(text="Expandir escrita")
+        self.focus_button.configure(text=f"Expandir escrita  {NOTE_FOCUS_SHORTCUT_LABEL}")
 
     def _exit_focus_shortcut(self, _event=None):
         self.exit_note_focus()
@@ -1818,6 +1834,7 @@ class CadernoApp:
     def new_entry(self):
         if self.session is None or not self._confirm_pending_changes():
             return
+        self.new_entry_collection_id = self._editor_metadata()[0]
         self.active_entry_id = None
         self.refresh_notes()
 

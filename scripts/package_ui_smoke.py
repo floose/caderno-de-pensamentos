@@ -56,9 +56,11 @@ def _save_synthetic_note(app) -> None:
     assert entry["favorite"] is True
     assert "Criada em " in app.title_dates.cget("text")
     assert "Modificada em " in app.title_dates.cget("text")
+    assert app.title_dates.cget("text").count(" às ") == 2
 
 
 def _exercise_note_focus(app) -> None:
+    assert app.focus_button.cget("text") == "Expandir escrita  ⌃⌘E"
     ask_text = ui.ask_text
     try:
         ui.ask_text = lambda *_args: "Projetos"
@@ -72,22 +74,28 @@ def _exercise_note_focus(app) -> None:
     assert app._has_pending_changes()
 
     app.body_editor.insert("end", " Texto escrito no modo expandido.")
-    app.enter_note_focus()
+    assert app._toggle_note_focus_shortcut() == "break"
     assert app.focus_mode and app.sidebar.winfo_manager() == ""
+    assert app.focus_button.cget("text") == "Voltar ao caderno  ⌃⌘E"
     assert app.note_list_panel.winfo_manager() == ""
     assert app.body_editor.get("1.0", "end-1c").endswith("modo expandido.")
     assert app._exit_focus_shortcut() == "break"
     assert not app.focus_mode and app.sidebar.winfo_manager() == "pack"
+    assert app.focus_button.cget("text") == "Expandir escrita  ⌃⌘E"
     assert app.body_editor.get("1.0", "end-1c").endswith("modo expandido.")
     assert app.collection_choice.get() == "Projetos"
     assert app.tags_entry.get() == "#modo-foco"
     assert not app.favorite_choice and app._has_pending_changes()
 
-    app.enter_note_focus()
+    assert app._toggle_note_focus_shortcut() == "break"
     assert app.save_entry()
     assert app.focus_mode and app.sidebar.winfo_manager() == ""
     entry = app._active_entry()
     assert entry["collection_id"] != "default"
+    assert app._new_entry_shortcut() == "break"
+    assert app.collection_choice.get() == "Projetos"
+    assert app.active_entry_id is None
+    app.select_entry(entry["id"])
     assert entry["tags"] == ["modo-foco"] and not entry["favorite"]
     app.exit_note_focus()
 
