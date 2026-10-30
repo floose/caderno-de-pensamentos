@@ -1,21 +1,21 @@
 # Plano de desenvolvimento do banco criptografado
 
 **Branch:** `feature/vault-encryption`
-**Estado:** protótipo CPV1 implementado; o backend real passou em round-trip com fixtures sintéticas, mas ainda não está pronto para dados pessoais.
+**Estado:** protótipo CPV1 implementado; o backend real passou em round-trip com fixtures sintéticas e a UI na branch de integração já usa sua fachada. O ciclo completo pela build atual do `.app` ainda não foi validado e o protótipo não está pronto para dados pessoais.
 
 Este é o roteiro de execução para o agente desenvolvedor e o agente cético. A especificação técnica única está em [`Decisao_de_arquitetura_cofre.md`](Decisao_de_arquitetura_cofre.md). O plano cobre o armazenamento local de textos e imagens e a função que protege o arquivo inteiro com senha.
 
 ## Resumo em linguagem simples
 
-O programa já tem código que organiza textos e imagens num arquivo e tenta protegê-los com senha. A senha é usada para criar uma chave; uma biblioteca pronta cifra o conteúdo e também detecta alterações no arquivo. A interface ainda não usa esse recurso.
+O programa organiza textos e imagens num arquivo e usa uma biblioteca pronta para cifrar o conteúdo e detectar alterações. A UI já se comunica com o núcleo por sua fachada pública; falta concluir a validação do ciclo integrado no `.app` atual.
 
-Isso ainda é um protótipo: PyNaCl 1.6.2 está instalado no ambiente do projeto e o fluxo real passou com textos e imagens sintéticos, inclusive uma amostra de um milhão de palavras. Não testamos um arquivo de 40 MB; esse foi apenas um cenário hipotético, não um requisito. O aplicativo Mac também não foi validado. Enquanto o caderno estiver aberto, o conteúdo e a chave precisam existir na memória do programa.
+Isso ainda é um protótipo: PyNaCl 1.6.2 está instalado no ambiente do projeto e o fluxo real passou com textos e imagens sintéticos, inclusive uma amostra de um milhão de palavras. Não testamos um arquivo de 40 MB; esse foi apenas um cenário hipotético, não um requisito. Uma prova do `.app` e probes empacotados existem, mas falta validar o ciclo completo pela build atual e medir Argon2id nesse runtime. Enquanto o caderno estiver aberto, o conteúdo e a chave precisam existir na memória do programa.
 
-**Estado atual:** o núcleo e o benchmark inicial foram testados no runtime Python deste Mac. A revisão cética dos testes atuais não encontrou achados críticos/altos abertos. A UI pode começar a usar a fachada com fixtures sintéticas; dados pessoais e distribuição aguardam validação do `.app` arm64 e integração completa.
+**Estado atual:** o núcleo e o benchmark inicial foram testados no runtime Python deste Mac. A revisão cética dos testes do núcleo não encontrou achados críticos/altos abertos. A UI já integra a fachada com fixtures sintéticas; dados pessoais e distribuição aguardam validação do ciclo completo na build atual do `.app` arm64.
 
 ## Critério de validação do núcleo
 
-O critério do núcleo é comprovar que uma fixture sintética de textos e imagem pode ser criada, aberta, editada, salva e reaberta como um único arquivo criptografado, e que senha errada, adulteração, truncamento e falha de gravação não entregam conteúdo parcial nem destroem uma versão válida. Esse critério foi exercitado no backend Python com PyNaCl real e fixtures sintéticas. A UI pode começar a integrar a fachada com esses dados; a validação do ciclo no `.app` arm64 continua pendente antes de dados pessoais.
+O critério do núcleo é comprovar que uma fixture sintética de textos e imagem pode ser criada, aberta, editada, salva e reaberta como um único arquivo criptografado, e que senha errada, adulteração, truncamento e falha de gravação não entregam conteúdo parcial nem destroem uma versão válida. Esse critério foi exercitado no backend Python com PyNaCl real e fixtures sintéticas. A UI agora usa a fachada; falta completar a validação do ciclo pela build atual do `.app` arm64 antes de dados pessoais.
 
 ## Limites de trabalho
 
@@ -73,10 +73,12 @@ O critério do núcleo é comprovar que uma fixture sintética de textos e image
 
 ### 5. Preparar integração, sem acoplar o núcleo à UI
 
-- [x] Manter importações do pacote independentes de Tkinter/UI; validar offline no `.app` ainda pendente.
+- [x] Manter importações do pacote independentes de Tkinter/UI.
+- [ ] Validar offline o funcionamento do backend criptográfico pela build atual do `.app`.
 - [ ] Manter docstrings nas APIs públicas e nas etapas criptográficas/de persistência críticas; explicitar propósito, contrato, falhas e garantias sem narrar cada linha.
-- [ ] Confirmar que PyNaCl/libsodium entra corretamente no `.app` macOS arm64 e medir seu tempo/memória.
-- [ ] Integrar criar/selecionar/desbloquear base e salvar snapshots pela API; manter formato CPV1 fora da UI e mostrar mensagem genérica em qualquer falha de abertura.
+- [x] Confirmar que PyNaCl/libsodium entra corretamente na prova inicial do `.app` macOS arm64.
+- [ ] Medir KDF e memória na build atual empacotada.
+- [x] Integrar criar/selecionar/desbloquear base e salvar snapshots pela API; manter formato CPV1 fora da UI e mostrar mensagem genérica em qualquer falha de abertura. A integração com fixtures está implementada; o ciclo completo pela build atual continua pendente.
 - [ ] Validar no `.app` os fluxos de criar, abrir, salvar, reabrir, trocar senha e recusar senha errada antes de considerar o ciclo de integração concluído.
 
 A UI será integrada em fatias verticais na branch `feature/ui-vault-integration`, usando a fachada pública e fixtures sintéticas. A sequência e os papéis dos agentes estão no “Processo de desenvolvimento da UI e das funcionalidades” do [`Plano_do_projeto.md`](Plano_do_projeto.md). A prova `.app` arm64 pode avançar em paralelo; dados pessoais continuam bloqueados até os gates de integração descritos ali.

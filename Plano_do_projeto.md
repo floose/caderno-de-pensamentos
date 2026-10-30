@@ -23,7 +23,7 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 - [x] Definir a distribuição inicial para uso próprio/testes; assinatura e notarização Apple ficam fora do escopo inicial.
 - [x] Definir macOS 14 Sonoma como versão mínima do sistema.
 - [x] Verificar que Tkinter, `_tkinter`, Tcl e Tk estão disponíveis no runtime Python.org usado pelo projeto.
-- [ ] Confirmar as arquiteturas das dependências no `.app` `arm64` final.
+- [x] Confirmar as arquiteturas das dependências na prova inicial do `.app` `arm64`; repetir na build atual e em uma máquina limpa continua pendente.
 
 ## Etapas do projeto
 
@@ -32,11 +32,11 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 - [x] Ler o contexto inicial e inspecionar a versão pré-desenvolvida em `dist/`.
 - [x] Escolher macOS e aplicativo `.app` como primeiro alvo.
 - [x] Definir a versão mínima como macOS 14 Sonoma.
-- [ ] Definir e validar o empacotamento de um `.app` `arm64`.
+- [x] Produzir e validar uma prova inicial do empacotamento `.app` `arm64`; a validação integrada da build atual continua pendente.
 - [x] Usar um runtime Python com Tcl/Tk 8.6 incluído; não depender do Tcl/Tk antigo fornecido pelo sistema.
 - [x] Fazer um protótipo curto da interface Tkinter antes de migrar as funções.
 - [x] Definir o fluxo de abertura e seleção de bases descrito abaixo.
-- [ ] Validar o empacotamento portátil do aplicativo `.app` para uso próprio em computador ou pendrive.
+- [x] Compactar a prova do `.app` em ZIP, extrair em outro local e abrir seu executável no Mac atual; repetir após a build atual continua pendente.
 
 #### Fluxo de abertura e seleção de bases
 
@@ -54,32 +54,33 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 - [x] Implementar um núcleo de cofre isolado da interface — protótipo em `src/caderno/vault/`.
 - [x] Exercitar o backend PyNaCl real com fixtures sintéticas, inclusive um milhão de palavras e imagens.
 - [x] Testar corrupção, salvamento/reabertura e troca de senha pelo backend criptográfico real com fixtures sintéticas; medir Argon2id no runtime Mac atual. Resultados e limites em [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
-- [ ] Validar o ciclo integrado completo de cofre e o perfil Argon2id pela UI do `.app` arm64 antes de usar dados pessoais.
+- [ ] Validar o ciclo integrado de cofre pela UI do `.app` arm64 e medir o perfil Argon2id no runtime empacotado antes de usar dados pessoais. A prova anterior usou harness para senha e não cobre digitação física na janela principal.
 - [x] Integrar o cofre com texto, coleções, hashtags, favoritos e exibição das datas da nota na UI; anexos e calendário seguem pendentes.
 - [ ] Planejar backup e migração de versões do formato.
 - [ ] Comunicar claramente que uma senha perdida não permite recuperar o conteúdo.
 
 ### 3. Implementar o núcleo do aplicativo
 
-- [ ] Criar a estrutura Python e separar interface, domínio, criptografia e persistência.
-- [ ] Implementar criar/abrir cofre e desbloquear com senha.
-- [ ] Implementar a lembrança do caminho da última base e os fluxos de base localizada, ausente, movida, inválida e criação de nova base.
-- [ ] Implementar salvamento explícito no arquivo aberto, com rascunhos locais, proteção ao fechar/trocar e tratamento de falhas.
+- [x] Criar a estrutura Python e separar interface, domínio, criptografia e persistência.
+- [x] Implementar criar/abrir cofre e desbloquear com senha.
+- [x] Implementar a lembrança do caminho da última base e os fluxos de base localizada, ausente, movida, inválida e criação de nova base; completar a validação no `.app` continua pendente.
+- [x] Implementar salvamento explícito no arquivo aberto, com rascunhos locais, proteção ao fechar/trocar e tratamento de falhas.
 - [ ] Implementar exportação e restauração de cópia de segurança criptografada.
 - [ ] Implementar alteração de senha sem expor o conteúdo em disco.
 
 ### 4. Migrar as funções do caderno
 
-- [ ] Implementar criação, leitura, edição e exclusão de textos.
-- [ ] Implementar rascunhos e organização por coleção e hashtag.
+- [x] Implementar criação, leitura e edição de notas.
+- [ ] Implementar exclusão segura de notas, com confirmação, tratamento de rascunhos pendentes e remoção de anexos associados.
+- [x] Implementar rascunhos e organização por coleção e hashtag.
 - [x] Implementar busca por título, conteúdo, coleção e hashtags; a consulta é temporária, combina todos os termos e preserva o rascunho enquanto filtra.
 - [x] Implementar filtros temporários por coleção e hashtag, combináveis com a busca.
 - [x] Implementar opções de ordenação por data de edição, criação e título, em ambos os sentidos.
 - [x] Implementar favoritos persistentes no editor, protegidos por salvar/descartar/cancelar, e filtro combinável com coleção, hashtag e busca.
 - [x] Implementar modo de foco que expande a escrita na janela atual e restaura a navegação sem perder o rascunho.
 - [x] Exibir datas de criação e última modificação no editor e proteger botões contra compressão horizontal com largura mínima e quebra de nomes longos de coleção.
-- [x] Adicionar ⌘N para criar nota na coleção selecionada, ⌃⌘E para alternar o modo de foco e horário às datas do editor.
-- [ ] Implementar editor e visualização Markdown, incluindo blocos de código e equações.
+- [x] Adicionar ⌘N para criar nota na coleção selecionada, ⌃⌘E para alternar o modo de foco, o atalho no rótulo do botão, Enter no campo de senha e horário às datas do editor.
+- [ ] Implementar editor e visualização Markdown, incluindo blocos de código e equações; preservar o corpo Markdown já armazenado sem alterar o schema nesta etapa.
 - [ ] Implementar anexar imagens por arquivo e colagem da área de transferência.
 - [ ] Implementar calendário baseado nas datas dos textos.
 - [ ] Revisar acessibilidade, mensagens de erro e comportamento ao fechar o aplicativo.
@@ -87,7 +88,7 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 ### 5. Testar e proteger os dados
 
 - [x] Criar testes automatizados do núcleo para criptografia, schema, persistência, senha e integridade do arquivo; resultados atuais e lacunas estão em [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
-- [ ] Criar testes de integração da UI e regressão para operações de texto/imagem no `.app`.
+- [ ] Completar testes de integração da UI e regressão para operações de texto/imagem no `.app`; o probe atual usa callbacks e substitui a entrada de senha por um harness.
 - [ ] Criar testes de regressão para operações de texto, imagens, backup e migração.
 - [x] Testar no núcleo falha pré-replace, retry e erro simulado de `fsync` do diretório.
 - [ ] Testar no `.app` falta de espaço, encerramento inesperado e recuperação após falha.
@@ -99,12 +100,12 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 ### 6. Empacotar e validar no macOS
 
 - [x] Gerar uma prova local do `.app` independente do Python instalado na máquina, com PyInstaller em modo `onedir` e `--windowed`; isso ainda não conclui a validação de distribuição.
-- [ ] Compactar o `.app` em ZIP para entrega e cópia para computador ou pendrive; validar extração e abertura sem instalador.
+- [x] Compactar a prova do `.app` em ZIP, extrair em outra pasta e abrir o executável sem instalador no Mac atual; repetir com a build atual continua pendente.
 - [ ] Avaliar `--onefile --windowed` somente se um executável único for requisito literal após prototipagem; verificar o custo de extração e inicialização.
 - [ ] Testar em uma instalação limpa do macOS dentro das versões suportadas.
-- [ ] Validar em Apple Silicon, incluindo macOS 14 Sonoma e uma versão atual do macOS.
+- [x] Validar a prova inicial em Apple Silicon no Mac atual. macOS 14, versões antigas, instalação limpa e outros Macs ficam adiados para distribuição.
 - [ ] Verificar abertura por duplo clique no Finder e acesso aos arquivos escolhidos.
-- [ ] Medir tamanho e tempo de abertura; corrigir problemas de empacotamento.
+- [x] Medir tamanho da prova inicial (~27 MB no `.app`, ~13 MB no ZIP) e corrigir problemas encontrados. Repetir com a build atual continua pendente.
 - [ ] Decidir e, se necessário, configurar assinatura Developer ID e notarização Apple.
 - [ ] Preparar instruções de uso, cópia de segurança e atualização do aplicativo.
 
@@ -130,7 +131,7 @@ Produzir o pacote em um Mac arm64, validar as arquiteturas das dependências e t
 - A revisão cética reproduziu defeitos de UI que foram corrigidos com regressões: o seletor recebe `⌘S`/`Escape`; rótulos permanecem únicos mesmo com colisões entre sufixos gerados e nomes literais; tentativas de criar nomes duplicados mostram alerta e não persistem outra coleção.
 - Alertas de erro/aviso/informação e a entrada de nome de coleção usam `Toplevel` próprios do app, com estilo compartilhado e confirmação/cancelamento por teclado. Senha e alterações pendentes também usam modais próprios. A suíte cobre tema, modalidade e atalhos; o usuário confirmou a aparência do alerta de duplicidade. O novo modal de texto deve ser conferido pela janela real via `testar_ui.command`.
 - Os seletores de abrir/criar base e coleção agora são janelas do próprio app, sem `filedialog` ou `ttk`; a navegação permite filtrar `.cpv` e respeita a raiz do perfil sintético. As preferências selecionam o diretório convencional de cada plataforma, com override para testes.
-- 94 testes focados passaram após a revisão cética. A build arm64 e o smoke UI/Tk + CPV1 cobrem metadados pendentes, salvar expandido e cancelar/descartar ao fechar. A revisão encontrou campos de validação ocultos; o app agora sai do modo de foco antes de focá-los. Regressões passaram. A reauditoria não encontrou alertas/painéis nativos: produção usa modais `tk.Toplevel`; interação física com a janela principal permanece pendente.
+- 94 testes focados passaram após a revisão cética. Uma build arm64 e o smoke UI/Tk + CPV1 de uma versão anterior cobrem metadados pendentes, salvar expandido e cancelar/descartar ao fechar; a build atual precisa ser refeita para validar os últimos atalhos e o ciclo integrado. A revisão encontrou campos de validação ocultos; o app agora sai do modo de foco antes de focá-los. Regressões passaram. A reauditoria não encontrou alertas/painéis nativos: produção usa modais `tk.Toplevel`; interação física com a janela principal permanece pendente.
 
 ### Processo de desenvolvimento da UI e das funcionalidades
 
@@ -143,11 +144,13 @@ Produzir o pacote em um Mac arm64, validar as arquiteturas das dependências e t
 **Ordem das fatias:**
 
 1. Criar, selecionar, abrir e fechar base; tratar base ausente, senha incorreta e arquivo inválido; guardar apenas o último caminho.
-2. Listar, criar, editar e excluir uma nota; salvar, fechar e reabrir sem perder conteúdo.
+2. [x] Listar, criar e editar notas; salvar, fechar e reabrir sem perder conteúdo. Excluir notas ainda está pendente.
 3. [x] Organizar notas em coleções e hashtags; suportar rascunhos, favoritos persistentes, modo de foco e exibição de datas e horários.
-4. Buscar, filtrar e ordenar notas; editar e visualizar Markdown.
+4. [x] Buscar, filtrar e ordenar notas; Markdown continua pendente.
 5. Anexar e visualizar imagens; adicionar o calendário baseado nas datas das notas.
 6. Completar backup/restauração, troca de senha na interface, acessibilidade e comportamento ao fechar o aplicativo.
+
+**Sequência recomendada para retomada:** validar primeiro o ciclo do `.app` atual com dados sintéticos; depois implementar exclusão segura de notas e anexos associados; em seguida Markdown; depois anexos na UI; então backup/restauração e plano de migração; por fim calendário e revisão de acessibilidade. Compatibilidade com outras versões do macOS, instalação limpa, assinatura e distribuição continuam adiadas para quando forem necessárias.
 
 ### Ponto único para testar a UI (macOS)
 
@@ -195,7 +198,7 @@ Legenda: ██ trabalho previsto; .. sem atividade prevista.
 ## Acompanhamento
 
 - **Estado atual:** primeira versão restrita a Apple Silicon (`arm64`), macOS 14 Sonoma ou posterior, Tkinter e distribuição inicial para uso próprio/testes.
-- **Estado da UI:** criar, escolher, abrir e fechar base estão implementados. Notas podem ser listadas, criadas e editadas com rascunho local e salvamento explícito; ⌘N cria nota na coleção atual e ⌃⌘E alterna o modo de foco. Coleção, hashtags e favoritos são editáveis e persistidos, e o fechamento protege alterações pendentes inclusive nos metadados. O modo de foco amplia a escrita, preserva o rascunho e retorna a campos inválidos quando a validação falha. O editor exibe data e hora de criação e última modificação, e mantém largura mínima para preservar os controles. Busca, filtros por coleção/hashtag/favoritos e ordenação por data de edição, criação ou título estão implementados. Alertas, entradas de texto, filtros, seletores de coleção, ordenação e navegação de bases usam modais próprios do app. 94 testes focados, build arm64 e smokes empacotados passaram; o roteiro para janela real está em [`testar_ui.command`](testar_ui.command).
+- **Estado da UI:** criar, escolher, abrir e fechar base estão implementados. Notas podem ser listadas, criadas e editadas com rascunho local e salvamento explícito; ⌘N cria nota na coleção atual e ⌃⌘E alterna o modo de foco. Exclusão de notas, Markdown, anexos pela UI, calendário e backup/restauração permanecem pendentes. Coleção, hashtags e favoritos são editáveis e persistidos, e o fechamento protege alterações pendentes inclusive nos metadados. O modo de foco amplia a escrita, preserva o rascunho e retorna a campos inválidos quando a validação falha. O editor exibe data e hora de criação e última modificação, e mantém largura mínima para preservar os controles. Busca, filtros por coleção/hashtag/favoritos e ordenação por data de edição, criação ou título estão implementados. Alertas, entradas de texto, filtros, seletores de coleção, ordenação e navegação de bases usam modais próprios do app. A suíte focada tem 94 testes aprovados; a prova arm64 e os smokes empacotados são de uma versão anterior, e a build atual precisa ser validada. O roteiro para janela real está em [`testar_ui.command`](testar_ui.command).
 - **Estado do cofre:** protótipo CPV1 isolado, testado com backend PyNaCl e fixtures sintéticas. Resultados e pendências atuais estão em [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
-- **Próximo marco:** repetir na janela do `.app` extraído o fluxo de nomes duplicados, atalhos no seletor e persistência. Validações de sistemas operacionais antigos ficam adiadas para distribuição.
+- **Próximo marco:** recompilar a versão atual do `.app` e validar nela, com dados sintéticos, criação/abertura, senha correta/incorreta, Enter no campo de senha, salvar/reabrir, duplicidade, atalhos e persistência; repetir a troca de senha e medir Argon2id no runtime empacotado. O smoke anterior substituiu a entrada de senha e não fecha esse ciclo. Depois, implementar exclusão segura de notas antes de Markdown.
 - **Atualizado em:** 2026-10-30.
