@@ -15,6 +15,23 @@ else:
     from vault import DurabilityUncertainError, VaultSession, VaultSnapshot, create_vault, open_vault
 
 ButtonVariant = Literal["primary", "secondary"]
+DEFAULT_SORT_MODE = "updated_desc"
+SORT_OPTIONS = (
+    ("updated_desc", "Última edição — mais recentes primeiro"),
+    ("updated_asc", "Última edição — mais antigas primeiro"),
+    ("created_desc", "Criação — mais recentes primeiro"),
+    ("created_asc", "Criação — mais antigas primeiro"),
+    ("title_asc", "Título — A–Z"),
+    ("title_desc", "Título — Z–A"),
+)
+SORT_BUTTON_LABELS = {
+    "updated_desc": "edição ↓",
+    "updated_asc": "edição ↑",
+    "created_desc": "criação ↓",
+    "created_asc": "criação ↑",
+    "title_asc": "título A–Z",
+    "title_desc": "título Z–A",
+}
 
 
 @dataclass(frozen=True)
@@ -991,6 +1008,7 @@ class CadernoApp:
         self.collection_id_by_label = {}
         self.collection_filter_id = None
         self.tag_filter = None
+        self.sort_mode = DEFAULT_SORT_MODE
         self.editor_metadata_ready = False
         root.title("Caderno de Pensamentos")
         root.geometry(f"{THEME.layout.window_size[0]}x{THEME.layout.window_size[1]}")
@@ -1173,6 +1191,9 @@ class CadernoApp:
         filter_button = getattr(self, "filter_button", None)
         if filter_button is not None:
             filter_button.configure(state="normal")
+        sort_button = getattr(self, "sort_button", None)
+        if sort_button is not None:
+            sort_button.configure(state="normal")
         self.close_button.pack(fill="x", padx=8, pady=(8, 0))
         self.update_summary(session.snapshot.document)
         self._render_collection_list()
@@ -1207,9 +1228,13 @@ class CadernoApp:
         self.search_query = ""
         self.collection_filter_id = None
         self.tag_filter = None
+        self.sort_mode = DEFAULT_SORT_MODE
         filter_button = getattr(self, "filter_button", None)
         if filter_button is not None:
             filter_button.configure(text="Filtrar ▾", state="disabled")
+        sort_button = getattr(self, "sort_button", None)
+        if sort_button is not None:
+            sort_button.configure(text=self._sort_button_text(), state="disabled")
         search_entry = getattr(self, "search_entry", None)
         if search_entry is None:
             return
@@ -1266,6 +1291,23 @@ class CadernoApp:
         self._update_filter_button()
         self._populate_note_list()
 
+    def choose_sort(self):
+        """Escolhe a ordem da lista usando o seletor modal compartilhado."""
+        if self.session is None:
+            return
+        selected = ask_choice(
+            self.root, "Ordenar notas", "Escolha como organizar as notas.",
+            list(SORT_OPTIONS), self.sort_mode,
+        )
+        if selected is None:
+            return
+        self.sort_mode = selected
+        self.sort_button.configure(text=self._sort_button_text())
+        self._populate_note_list()
+
+    def _sort_button_text(self):
+        return f"Ordenar: {SORT_BUTTON_LABELS[self.sort_mode]} ▾"
+
     @staticmethod
     def _available_tags(document):
         tags = {tag.casefold(): tag for entry in document["entries"] for tag in entry["tags"]}
@@ -1279,12 +1321,21 @@ class CadernoApp:
     def _matching_entries(self):
         document = self.session.snapshot.document
         collections = {item["id"]: item["name"] for item in document["collections"]}
-        entries = sorted(document["entries"], key=lambda item: item["updated_at"], reverse=True)
+        entries = self._sort_entries(document["entries"], self.sort_mode)
         return [
             entry for entry in entries
             if self._entry_matches_query(entry, collections, self.search_query)
             and self._entry_matches_filters(entry)
         ]
+
+    @staticmethod
+    def _sort_entries(entries, mode: str):
+        field, direction = mode.rsplit("_", 1)
+        if field == "title":
+            key = lambda entry: entry["title"].casefold()
+        else:
+            key = lambda entry: entry[f"{field}_at"]
+        return sorted(entries, key=key, reverse=direction == "desc")
 
     @staticmethod
     def _entry_matches_query(entry, collections, query: str) -> bool:
@@ -1992,7 +2043,7 @@ def build_summary(parent: tk.Widget, app: CadernoApp) -> None:
 def build_search(parent: tk.Widget, app: CadernoApp) -> None:
     row = tk.Frame(parent, bg=THEME.paper)
     row.pack(fill="x", pady=(0, THEME.layout.search_bottom_padding))
-    app.search_placeholder = "⌕   Buscar em títulos, coleções, hashtags e conteúdo…"
+    app.search_placeholder = "⌕   Buscar notas…"
     app.search_placeholder_visible = True
     app.search_query = ""
     app.search_entry = tk.Entry(
@@ -2019,7 +2070,12 @@ def build_search(parent: tk.Widget, app: CadernoApp) -> None:
         row, "Filtrar ▾", "secondary", pady=9,
         command=app.choose_filters, state="disabled",
     )
-    app.filter_button.pack(side="right")
+    app.sort_button = make_button(
+        row, app._sort_button_text(), "secondary", pady=9,
+        command=app.choose_sort, state="disabled",
+    )
+    app.sort_button.pack(side="right")
+    app.filter_button.pack(side="right", padx=(8, 0))
 
 
 def build_empty_state(parent: tk.Widget, app: CadernoApp) -> None:

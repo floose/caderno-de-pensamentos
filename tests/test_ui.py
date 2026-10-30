@@ -545,12 +545,14 @@ def test_search_control_uses_application_entry_with_clear_and_escape_bindings(mo
         return entry
 
     monkeypatch.setattr(ui.tk, "Entry", make_search_entry)
+
     def make_search_button(*args, **button_options):
         buttons.append((args, button_options))
         return FakeEditorWidget()
 
     monkeypatch.setattr(ui, "make_button", make_search_button)
     app = bare_app()
+    app.sort_mode = ui.DEFAULT_SORT_MODE
 
     ui.build_search(FakeEditorWidget(), app)
 
@@ -559,6 +561,9 @@ def test_search_control_uses_application_entry_with_clear_and_escape_bindings(mo
     assert buttons[0][0][1:3] == ("Filtrar ▾", "secondary")
     assert buttons[0][1]["command"] == app.choose_filters
     assert buttons[0][1]["state"] == "disabled"
+    assert buttons[1][0][1:3] == (app._sort_button_text(), "secondary")
+    assert buttons[1][1]["command"] == app.choose_sort
+    assert buttons[1][1]["state"] == "disabled"
     assert {"<FocusIn>", "<FocusOut>", "<KeyRelease>", "<Escape>"} <= set(entry.bindings)
     entry.bindings["<FocusIn>"](None)
     assert entry.value == "" and not app.search_placeholder_visible
@@ -571,9 +576,11 @@ def test_search_control_uses_application_entry_with_clear_and_escape_bindings(mo
 
 def test_search_is_enabled_only_when_a_vault_is_open():
     app = bare_app()
+    app.sort_mode = ui.DEFAULT_SORT_MODE
     app.search_placeholder = "Buscar"
     app.search_entry = Mock()
     app.filter_button = Mock()
+    app.sort_button = Mock()
     app.status = Mock()
     app.status_detail = Mock()
     app.close_button = Mock()
@@ -585,6 +592,9 @@ def test_search_is_enabled_only_when_a_vault_is_open():
     assert app.search_query == ""
     app.search_entry.configure.assert_any_call(state="disabled", fg=ui.THEME.muted)
     app.filter_button.configure.assert_called_once_with(text="Filtrar ▾", state="disabled")
+    app.sort_button.configure.assert_called_once_with(
+        text="Ordenar: edição ↓ ▾", state="disabled",
+    )
     app.search_area.reset_mock()
 
     session = Mock(path=Path("synthetic.cpv"), snapshot=Mock(document={"entries": [], "collections": []}))
@@ -592,6 +602,7 @@ def test_search_is_enabled_only_when_a_vault_is_open():
 
     app.search_entry.configure.assert_called_with(state="normal")
     app.filter_button.configure.assert_called_with(state="normal")
+    app.sort_button.configure.assert_called_with(state="normal")
     app.search_area.pack.assert_called_once_with(fill="x", before=app.state_area)
 
 
@@ -602,6 +613,7 @@ def test_switching_vaults_clears_ephemeral_search_and_filters():
     app.search_placeholder = "Buscar"
     app.search_entry = Mock()
     app.filter_button = Mock()
+    app.sort_button = Mock()
     app.search_query = "termo privado"
     app.collection_filter_id = "old-collection"
     app.tag_filter = "old-tag"
@@ -618,9 +630,12 @@ def test_switching_vaults_clears_ephemeral_search_and_filters():
 
     assert app.search_query == ""
     assert app.collection_filter_id is None and app.tag_filter is None
+    assert app.sort_mode == ui.DEFAULT_SORT_MODE
     assert app.search_entry.insert.call_args.args == (0, "Buscar")
     app.filter_button.configure.assert_any_call(text="Filtrar ▾", state="disabled")
     app.filter_button.configure.assert_called_with(state="normal")
+    app.sort_button.configure.assert_any_call(text="Ordenar: edição ↓ ▾", state="disabled")
+    app.sort_button.configure.assert_called_with(state="normal")
 
 
 def test_unsaved_dialog_binds_save_discard_and_cancel_shortcuts(monkeypatch):

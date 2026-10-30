@@ -77,6 +77,14 @@ def _exercise_search_and_filters(app) -> None:
         assert app.collection_filter_id is None and app.tag_filter is None
     finally:
         ui.ask_filters = ask_filters
+    ask_choice = ui.ask_choice
+    try:
+        ui.ask_choice = lambda *_args: "title_asc"
+        app.choose_sort()
+        assert app.sort_mode == "title_asc"
+        assert app.sort_button.cget("text") == "Ordenar: título A–Z ▾"
+    finally:
+        ui.ask_choice = ask_choice
 
 
 def _close_and_reopen_vault(app, vault_path: Path) -> None:

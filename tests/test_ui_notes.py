@@ -54,11 +54,13 @@ def search_app():
             {
                 "id": "entry-art", "title": "Aquarela", "body_markdown": "Planejar canal",
                 "collection_id": "collection-ideas", "tags": ["desenho", "tela"],
+                "created_at": "2026-10-28T10:00:00Z",
                 "updated_at": "2026-10-30T10:00:00Z",
             },
             {
                 "id": "entry-archive", "title": "Arquivo antigo", "body_markdown": "Lembranças",
                 "collection_id": "collection-ideas", "tags": ["memória"],
+                "created_at": "2026-10-29T10:00:00Z",
                 "updated_at": "2026-10-29T10:00:00Z",
             },
         ],
@@ -66,6 +68,7 @@ def search_app():
     app.search_query = ""
     app.collection_filter_id = None
     app.tag_filter = None
+    app.sort_mode = ui.DEFAULT_SORT_MODE
     app.active_entry_id = "entry-art"
     app.note_entry_ids = []
     app.note_list = FakeNoteList()
@@ -314,6 +317,39 @@ def test_cancelled_filter_dialog_preserves_existing_filter_state(monkeypatch):
     assert app.collection_filter_id == "collection-ideas"
     assert app.tag_filter == "desenho"
     app.filter_button.configure.assert_not_called()
+
+
+def test_sort_modes_order_notes_by_edit_creation_and_title():
+    app = search_app()
+    expected_orders = {
+        "updated_desc": ["entry-art", "entry-archive"],
+        "updated_asc": ["entry-archive", "entry-art"],
+        "created_desc": ["entry-archive", "entry-art"],
+        "created_asc": ["entry-art", "entry-archive"],
+        "title_asc": ["entry-art", "entry-archive"],
+        "title_desc": ["entry-archive", "entry-art"],
+    }
+
+    for mode, expected in expected_orders.items():
+        app.sort_mode = mode
+        assert [entry["id"] for entry in app._matching_entries()] == expected
+
+
+def test_sort_choice_updates_list_and_cancel_preserves_current_mode(monkeypatch):
+    app = search_app()
+    app.root = object()
+    app.sort_button = Mock()
+    choose = Mock(side_effect=("title_asc", None))
+    monkeypatch.setattr(ui, "ask_choice", choose)
+
+    ui.CadernoApp.choose_sort(app)
+    assert app.sort_mode == "title_asc"
+    assert app.note_entry_ids == ["entry-art", "entry-archive"]
+    app.sort_button.configure.assert_called_once_with(text="Ordenar: título A–Z ▾")
+
+    ui.CadernoApp.choose_sort(app)
+    assert app.sort_mode == "title_asc"
+    assert choose.call_args.args[-1] == "title_asc"
 
 
 def test_add_collection_persists_real_vault_and_rejects_duplicate_name(tmp_path, monkeypatch):

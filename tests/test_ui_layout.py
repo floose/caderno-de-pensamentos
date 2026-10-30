@@ -67,15 +67,21 @@ def test_ui_text_fits_at_default_and_minimum_window_widths():
         assert _text_width(theme.font_button, "+  Novo texto") + 2 * layout.button_horizontal_padding <= sidebar_content_width
         assert topbar_text_width <= content_width
 
-        sort_button_width = _text_width(theme.font_button, "Ordenar: última edição  ▾")
+        filter_button_width = (
+            _text_width(theme.font_button, "Filtros (2) ▾")
+            + 2 * layout.button_horizontal_padding
+            + 2 * layout.highlight_thickness
+        )
+        sort_button_width = (
+            _text_width(theme.font_button, "Ordenar: criação ↑ ▾")
+            + 2 * layout.button_horizontal_padding
+            + 2 * layout.highlight_thickness
+        )
         search_width = (
-            content_width - sort_button_width
-        - 2 * layout.button_horizontal_padding - 2 * layout.highlight_thickness
-        - layout.search_gap - 2 * layout.highlight_thickness
+            content_width - filter_button_width - sort_button_width
+            - layout.search_gap - 8 - 2 * layout.highlight_thickness
         )
-        placeholder_width = _text_width(
-            theme.font_body, "⌕   Buscar em títulos, coleções, hashtags e conteúdo…",
-        )
+        placeholder_width = _text_width(theme.font_body, "⌕   Buscar notas…")
         assert placeholder_width <= search_width
 
 
