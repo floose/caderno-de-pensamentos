@@ -54,12 +54,14 @@ def search_app():
             {
                 "id": "entry-art", "title": "Aquarela", "body_markdown": "Planejar canal",
                 "collection_id": "collection-ideas", "tags": ["desenho", "tela"],
+                "favorite": True,
                 "created_at": "2026-10-28T10:00:00Z",
                 "updated_at": "2026-10-30T10:00:00Z",
             },
             {
                 "id": "entry-archive", "title": "Arquivo antigo", "body_markdown": "Lembranças",
                 "collection_id": "collection-ideas", "tags": ["memória"],
+                "favorite": False,
                 "created_at": "2026-10-29T10:00:00Z",
                 "updated_at": "2026-10-29T10:00:00Z",
             },
@@ -69,6 +71,7 @@ def search_app():
     app.collection_filter_id = None
     app.tag_filter = None
     app.sort_mode = ui.DEFAULT_SORT_MODE
+    app.favorites_only = False
     app.active_entry_id = "entry-art"
     app.note_entry_ids = []
     app.note_list = FakeNoteList()
@@ -90,6 +93,9 @@ def app_with_editor(session):
     app.tags_entry = FakeEntry()
     app.saved_collection_id = initial_collection
     app.saved_tags = []
+    app.favorite_choice = False
+    app.saved_favorite = False
+    app.favorite_button = Mock()
     app.editor_metadata_ready = True
     app.title_entry = FakeEntry()
     app.body_editor = FakeBody()
@@ -244,6 +250,37 @@ def test_collection_choice_updates_draft_label_without_saving(tmp_path, monkeypa
     session.close()
 
 
+def test_favorite_toggle_is_pending_and_persists_with_save_or_close(tmp_path, monkeypatch):
+    path = tmp_path / "synthetic-favorite-test.cpv"
+    session = create_vault(path, "synthetic-password", VaultSnapshot({
+        "schema_version": 1,
+        "collections": [{"id": "collection-general", "name": "Geral"}],
+        "attachments": [], "entries": [],
+    }))
+    app = app_with_editor(session)
+    app.title_entry.value = "Nota favorita"
+    app.body_editor.value = "Texto sintético"
+
+    ui.CadernoApp.toggle_favorite(app)
+    assert app.favorite_choice and app._has_pending_changes()
+    assert app.save_entry()
+    entry_id = app.active_entry_id
+    assert session.snapshot.document["entries"][0]["favorite"] is True
+    assert not app._has_pending_changes()
+
+    ui.CadernoApp.toggle_favorite(app)
+    monkeypatch.setattr(ui, "ask_unsaved_changes", lambda _parent: "cancel")
+    assert not app.close_vault()
+    assert app.session is session and app.favorite_choice is False
+
+    monkeypatch.setattr(ui, "ask_unsaved_changes", lambda _parent: "save")
+    assert app.close_vault()
+    reopened = open_vault(path, "synthetic-password")
+    entry = next(item for item in reopened.snapshot.document["entries"] if item["id"] == entry_id)
+    assert entry["favorite"] is False
+    reopened.close()
+
+
 def test_search_matches_all_words_across_content_and_tags_case_insensitively():
     app = search_app()
     app.set_search_query("DESENHO planejar")
@@ -284,13 +321,14 @@ def test_collection_and_tag_filters_combine_with_search_without_resetting_draft(
     app.root = object()
     app.filter_button = Mock()
     app.set_search_query("planejar")
-    choose = Mock(return_value=("collection-ideas", "desenho"))
+    choose = Mock(return_value=("collection-ideas", "desenho", False))
     monkeypatch.setattr(ui, "ask_filters", choose)
 
     ui.CadernoApp.choose_filters(app)
 
     assert app.collection_filter_id == "collection-ideas"
     assert app.tag_filter == "desenho"
+    assert not app.favorites_only
     assert app.note_entry_ids == ["entry-art"]
     assert app.title_entry.value == "rascunho não salvo"
     app.filter_button.configure.assert_called_once_with(text="Filtros (2) ▾")
@@ -300,6 +338,7 @@ def test_collection_and_tag_filters_combine_with_search_without_resetting_draft(
         ["desenho", "memória", "tela"],
         None,
         None,
+        False,
     )
 
 
@@ -317,6 +356,24 @@ def test_cancelled_filter_dialog_preserves_existing_filter_state(monkeypatch):
     assert app.collection_filter_id == "collection-ideas"
     assert app.tag_filter == "desenho"
     app.filter_button.configure.assert_not_called()
+
+
+def test_favorites_only_filter_shows_only_starred_notes(monkeypatch):
+    app = search_app()
+    app.root = object()
+    app.filter_button = Mock()
+    monkeypatch.setattr(ui, "ask_filters", Mock(return_value=(None, None, True)))
+
+    ui.CadernoApp.choose_filters(app)
+
+    assert app.favorites_only
+    assert app.note_entry_ids == ["entry-art"]
+    app.filter_button.configure.assert_called_once_with(text="Filtros (1) ▾")
+    for entry in app.session.snapshot.document["entries"]:
+        entry["favorite"] = False
+    app._populate_note_list()
+    assert app.note_entry_ids == []
+    assert app.note_list.items == ["Nenhuma nota encontrada"]
 
 
 def test_sort_modes_order_notes_by_edit_creation_and_title():

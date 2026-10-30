@@ -43,11 +43,13 @@ def _save_synthetic_note(app) -> None:
     app.title_entry.insert(0, "Nota do teste empacotado")
     app.body_editor.insert("1.0", "Conteúdo sintético do smoke test.")
     app.tags_entry.insert(0, "#teste, #empacotamento")
+    app.toggle_favorite()
     assert app.save_entry()
     entry = app.session.snapshot.document["entries"][0]
     assert entry["title"] == "Nota do teste empacotado"
     assert entry["body_markdown"] == "Conteúdo sintético do smoke test."
     assert entry["tags"] == ["teste", "empacotamento"]
+    assert entry["favorite"] is True
 
 
 def _reject_duplicate_collection(app) -> None:
@@ -64,7 +66,7 @@ def _exercise_search_and_filters(app) -> None:
     assert app.note_entry_ids == [app.active_entry_id]
     ask_filters = ui.ask_filters
     try:
-        ui.ask_filters = lambda *_args: ("default", "empacotamento")
+        ui.ask_filters = lambda *_args: ("default", "empacotamento", False)
         app.choose_filters()
         assert app.collection_filter_id == "default"
         assert app.tag_filter == "empacotamento"
@@ -72,9 +74,12 @@ def _exercise_search_and_filters(app) -> None:
         assert app.note_list.get(0) == "Nenhuma nota encontrada"
         app.set_search_query("")
         assert app.note_entry_ids == [app.active_entry_id]
-        ui.ask_filters = lambda *_args: (None, None)
+        ui.ask_filters = lambda *_args: (None, None, True)
         app.choose_filters()
-        assert app.collection_filter_id is None and app.tag_filter is None
+        assert app.favorites_only and app.note_entry_ids == [app.active_entry_id]
+        ui.ask_filters = lambda *_args: (None, None, False)
+        app.choose_filters()
+        assert not app.favorites_only
     finally:
         ui.ask_filters = ask_filters
     ask_choice = ui.ask_choice
@@ -94,6 +99,7 @@ def _close_and_reopen_vault(app, vault_path: Path) -> None:
     assert entry is not None
     assert entry["title"] == "Nota do teste empacotado"
     assert entry["tags"] == ["teste", "empacotamento"]
+    assert entry["favorite"] is True
     assert app.close_vault()
     persisted = open_vault(vault_path, "synthetic-package-ui-password")
     assert persisted.snapshot.document["entries"][0]["body_markdown"] == "Conteúdo sintético do smoke test."

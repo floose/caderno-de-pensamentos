@@ -809,8 +809,10 @@ def ask_choice(parent, title: str, prompt: str, options: list[tuple[str, str]], 
 class FilterDialog:
     """Seleciona coleção e hashtag em um modal estilizado do aplicativo."""
 
-    def __init__(self, parent, collections, tags, selected_collection, selected_tag):
+    def __init__(self, parent, collections, tags, selected_collection, selected_tag,
+                 favorites_only=False):
         self.result = None
+        self.favorites_only = favorites_only
         self.collection_options = [(None, "Todas as coleções"), *collections]
         self.tag_options = [(None, "Todas as hashtags"), *((tag, tag) for tag in tags)]
         self.window = tk.Toplevel(parent)
@@ -842,6 +844,7 @@ class FilterDialog:
             panel, "Coleção", self.collection_options, selected_collection,
         )
         self.tag_list = self._build_picker(panel, "Hashtag", self.tag_options, selected_tag)
+        self._build_favorites_toggle(panel)
         self._build_actions(panel)
         self.window.geometry(f"{width}x{height}")
         self.window.minsize(width, height)
@@ -883,10 +886,22 @@ class FilterDialog:
         )
         make_button(actions, "Aplicar", "primary", pady=8, command=self.apply).pack(side="right")
 
+    def _build_favorites_toggle(self, parent):
+        label = "★ Somente favoritas" if self.favorites_only else "☆ Somente favoritas"
+        self.favorites_button = make_button(
+            parent, label, "secondary", pady=5, command=self.toggle_favorites,
+        )
+        self.favorites_button.pack(anchor="w", pady=(0, 8))
+
+    def toggle_favorites(self):
+        self.favorites_only = not self.favorites_only
+        label = "★ Somente favoritas" if self.favorites_only else "☆ Somente favoritas"
+        self.favorites_button.configure(text=label)
+
     def apply(self):
         collection = self._selected_value(self.collection_list, self.collection_options)
         tag = self._selected_value(self.tag_list, self.tag_options)
-        self.result = collection, tag
+        self.result = collection, tag, self.favorites_only
         self.window.destroy()
 
     @staticmethod
@@ -914,9 +929,11 @@ class FilterDialog:
         self.window.geometry(f"{width}x{height}+{x}+{y}")
 
 
-def ask_filters(parent, collections, tags, selected_collection, selected_tag):
+def ask_filters(parent, collections, tags, selected_collection, selected_tag, favorites_only=False):
     """Abre o modal de filtros e retorna as escolhas ou None ao cancelar."""
-    dialog = FilterDialog(parent, collections, tags, selected_collection, selected_tag)
+    dialog = FilterDialog(
+        parent, collections, tags, selected_collection, selected_tag, favorites_only,
+    )
     parent.wait_window(dialog.window)
     return dialog.result
 
@@ -1005,9 +1022,12 @@ class CadernoApp:
         self.saved_body = ""
         self.saved_collection_id = None
         self.saved_tags = []
+        self.favorite_choice = False
+        self.saved_favorite = False
         self.collection_id_by_label = {}
         self.collection_filter_id = None
         self.tag_filter = None
+        self.favorites_only = False
         self.sort_mode = DEFAULT_SORT_MODE
         self.editor_metadata_ready = False
         root.title("Caderno de Pensamentos")
@@ -1228,6 +1248,7 @@ class CadernoApp:
         self.search_query = ""
         self.collection_filter_id = None
         self.tag_filter = None
+        self.favorites_only = False
         self.sort_mode = DEFAULT_SORT_MODE
         filter_button = getattr(self, "filter_button", None)
         if filter_button is not None:
@@ -1284,10 +1305,11 @@ class CadernoApp:
         tags = self._available_tags(document)
         selection = ask_filters(
             self.root, collections, tags, self.collection_filter_id, self.tag_filter,
+            self.favorites_only,
         )
         if selection is None:
             return
-        self.collection_filter_id, self.tag_filter = selection
+        self.collection_filter_id, self.tag_filter, self.favorites_only = selection
         self._update_filter_button()
         self._populate_note_list()
 
@@ -1314,7 +1336,11 @@ class CadernoApp:
         return sorted(tags.values(), key=str.casefold)
 
     def _update_filter_button(self):
-        active = int(self.collection_filter_id is not None) + int(self.tag_filter is not None)
+        active = (
+            int(self.collection_filter_id is not None)
+            + int(self.tag_filter is not None)
+            + int(self.favorites_only)
+        )
         label = f"Filtros ({active}) ▾" if active else "Filtrar ▾"
         self.filter_button.configure(text=label)
 
@@ -1350,6 +1376,8 @@ class CadernoApp:
     def _entry_matches_filters(self, entry) -> bool:
         if self.collection_filter_id and entry["collection_id"] != self.collection_filter_id:
             return False
+        if self.favorites_only and not entry["favorite"]:
+            return False
         tags = {tag.casefold() for tag in entry["tags"]}
         return self.tag_filter is None or self.tag_filter.casefold() in tags
 
@@ -1359,7 +1387,8 @@ class CadernoApp:
         self.note_entry_ids = [entry["id"] for entry in entries]
         for entry in entries:
             self.note_list.insert("end", entry["title"])
-        if not entries and (self.search_query or self.collection_filter_id or self.tag_filter):
+        has_filters = self.search_query or self.collection_filter_id or self.tag_filter or self.favorites_only
+        if not entries and has_filters:
             self.note_list.insert("end", "Nenhuma nota encontrada")
         if self.active_entry_id in self.note_entry_ids:
             index = self.note_entry_ids.index(self.active_entry_id)
@@ -1508,12 +1537,21 @@ class CadernoApp:
         self.collection_choice = tk.StringVar(self.editor_panel, value=selected_label)
         self.saved_collection_id = collection_id
         self.saved_tags = list(entry["tags"]) if entry else []
+        self.favorite_choice = bool(entry["favorite"]) if entry else False
+        self.saved_favorite = self.favorite_choice
 
     def _render_title_field(self, title):
+        header = tk.Frame(self.editor_panel, bg=THEME.state_panel)
+        header.pack(fill="x", pady=(0, 5))
         tk.Label(
-            self.editor_panel, text="Título", bg=THEME.state_panel,
+            header, text="Título", bg=THEME.state_panel,
             fg=THEME.ink, font=THEME.font_label,
-        ).pack(anchor="w", pady=(0, 5))
+        ).pack(side="left")
+        self.favorite_button = make_button(
+            header, self._favorite_button_text(), "secondary", pady=4,
+            command=self.toggle_favorite,
+        )
+        self.favorite_button.pack(side="right")
         self.title_entry = tk.Entry(
             self.editor_panel, bg=THEME.panel, fg=THEME.ink,
             insertbackground=THEME.green, font=THEME.font_heading,
@@ -1522,6 +1560,14 @@ class CadernoApp:
         )
         self.title_entry.pack(fill="x", pady=(0, 12), ipady=7)
         self.title_entry.insert(0, title)
+
+    def _favorite_button_text(self):
+        return "★ Favorita" if self.favorite_choice else "☆ Favoritar"
+
+    def toggle_favorite(self):
+        """Alterna o estado favorito apenas no rascunho até salvar a nota."""
+        self.favorite_choice = not self.favorite_choice
+        self.favorite_button.configure(text=self._favorite_button_text())
 
     def _render_metadata_fields(self):
         options = self.collection_options
@@ -1574,7 +1620,10 @@ class CadernoApp:
         body_scrollbar.pack(side="right", fill="y")
         self.body_editor.configure(yscrollcommand=body_scrollbar.set)
         self.body_editor.insert("1.0", body)
-        for widget in (self.title_entry, self.tags_entry, self.collection_selector, self.body_editor):
+        for widget in (
+            self.title_entry, self.tags_entry, self.collection_selector,
+            self.favorite_button, self.body_editor,
+        ):
             widget.bind("<Command-s>", self._save_shortcut)
             widget.bind("<Escape>", self._cancel_edit_shortcut)
 
@@ -1672,6 +1721,7 @@ class CadernoApp:
         content_changed = self._editor_values() != (self.saved_title, self.saved_body)
         metadata_changed = self.editor_metadata_ready and (
             self._editor_metadata() != (self.saved_collection_id, self.saved_tags)
+            or self.favorite_choice != self.saved_favorite
         )
         return content_changed or metadata_changed
 
@@ -1709,7 +1759,9 @@ class CadernoApp:
             return False
         snapshot = self.session.snapshot
         document = snapshot.document
-        entry = self._updated_entry(document, title, body, collection_id, tags)
+        entry = self._updated_entry(
+            document, title, body, collection_id, tags, self.favorite_choice,
+        )
         try:
             self.session.save(VaultSnapshot(document, snapshot.attachments))
         except DurabilityUncertainError:
@@ -1731,14 +1783,15 @@ class CadernoApp:
         self._mark_entry_saved(entry, title, body)
         return True
 
-    def _updated_entry(self, document, title: str, body: str, collection_id, tags: list[str]):
+    def _updated_entry(self, document, title: str, body: str, collection_id, tags: list[str],
+                       favorite: bool):
         now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
         if self.active_entry_id is None:
             collection_id = collection_id or self._default_collection(document)
             entry = {
                 "id": str(uuid4()), "title": title, "body_markdown": body,
                 "collection_id": collection_id, "tags": tags, "created_at": now,
-                "updated_at": now, "published_at": None, "favorite": False, "attachments": [],
+                "updated_at": now, "published_at": None, "favorite": favorite, "attachments": [],
             }
             document["entries"].append(entry)
             return entry
@@ -1747,6 +1800,7 @@ class CadernoApp:
         entry["body_markdown"] = body
         entry["collection_id"] = collection_id or self._default_collection(document)
         entry["tags"] = tags
+        entry["favorite"] = favorite
         entry["updated_at"] = now
         return entry
 
@@ -1763,6 +1817,11 @@ class CadernoApp:
         self.saved_title, self.saved_body = title, body
         self.saved_collection_id = entry["collection_id"]
         self.saved_tags = list(entry["tags"])
+        self.saved_favorite = bool(entry["favorite"])
+        self.favorite_choice = self.saved_favorite
+        favorite_button = getattr(self, "favorite_button", None)
+        if favorite_button is not None:
+            favorite_button.configure(text=self._favorite_button_text())
         self.update_summary(self.session.snapshot.document)
         self.refresh_notes()
 

@@ -37,6 +37,9 @@ def bare_app():
     app.saved_body = ""
     app.saved_collection_id = None
     app.saved_tags = []
+    app.favorite_choice = False
+    app.saved_favorite = False
+    app.favorite_button = Mock()
     app.editor_metadata_ready = False
     app._activate = Mock()
     app._remember_path = Mock()
@@ -521,8 +524,10 @@ def test_filter_dialog_applies_selected_facets_and_escape_cancels(monkeypatch):
     assert lists[0].items == ["Todas as coleções", "Projetos"]
     assert lists[1].items == ["Todas as hashtags", "desenho", "leitura"]
     assert lists[0].selection == (1,) and lists[1].selection == (2,)
+    dialog.toggle_favorites()
+    assert dialog.favorites_button.configure_options["text"] == "★ Somente favoritas"
     dialog.apply()
-    assert dialog.result == ("collection-projects", "leitura")
+    assert dialog.result == ("collection-projects", "leitura", True)
 
     cancelled = ui.FilterDialog(FakePasswordParent(), [], [], None, None)
     assert cancelled.window.bindings["<Escape>"](None) == "break"
@@ -917,6 +922,8 @@ def test_save_edit_preserves_created_time_tags_favorite_and_attachments(monkeypa
     app.body_editor.value = "Texto editado"
     app.saved_title = "Antes"
     app.saved_body = "Texto antigo"
+    app.favorite_choice = True
+    app.saved_favorite = True
     monkeypatch.setattr(ui, "show_alert", Mock())
 
     assert app.save_entry()
@@ -1157,12 +1164,15 @@ def test_note_editor_binds_save_and_cancel_shortcuts_to_all_editable_fields(monk
 
     ui.CadernoApp._render_note_editor(app, None)
 
-    for field in (app.title_entry, app.tags_entry, app.collection_selector, app.body_editor):
+    for field in (
+        app.title_entry, app.tags_entry, app.collection_selector,
+        app.favorite_button, app.body_editor,
+    ):
         assert set(field.bindings) == {"<Command-s>", "<Escape>"}
         field.bindings["<Command-s>"](None)
         field.bindings["<Escape>"](None)
-    assert app.save_entry.call_count == 4
-    assert app._cancel_edit_shortcut.call_count == 4
+    assert app.save_entry.call_count == 5
+    assert app._cancel_edit_shortcut.call_count == 5
 
 
 def test_note_editor_connects_vertical_scrollbar_to_text_widget(monkeypatch):
