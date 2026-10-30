@@ -119,13 +119,17 @@ def _exercise_focus_close(app) -> None:
 
 def _reject_duplicate_collection(app) -> None:
     alerts = []
-    ui.ask_text = lambda *_args: "geral"
-    ui.show_alert = lambda *args: alerts.append(args)
-    assert not app.add_collection()
-    assert [item["name"] for item in app.session.snapshot.document["collections"]] == [
-        "Geral", "Projetos",
-    ]
-    assert alerts == [(app.root, "Coleção existente", "Já existe uma coleção chamada “geral”.")]
+    ask_text, show_alert = ui.ask_text, ui.show_alert
+    try:
+        ui.ask_text = lambda *_args: "geral"
+        ui.show_alert = lambda *args: alerts.append(args)
+        assert not app.add_collection()
+        assert [item["name"] for item in app.session.snapshot.document["collections"]] == [
+            "Geral", "Projetos",
+        ]
+        assert alerts == [(app.root, "Coleção existente", "Já existe uma coleção chamada “geral”.")]
+    finally:
+        ui.ask_text, ui.show_alert = ask_text, show_alert
 
 
 def _exercise_search_and_filters(app) -> None:
@@ -162,7 +166,28 @@ def _exercise_search_and_filters(app) -> None:
 
 def _close_and_reopen_vault(app, vault_path: Path) -> None:
     assert app.close_vault()
-    app.unlock(vault_path)
+    alerts = []
+    ask_password, show_alert = ui.ask_password, ui.show_alert
+    try:
+        restore_binding = getattr(app, "_restore_binding", None)
+        if restore_binding:
+            app.root.unbind("<Map>", restore_binding)
+        ui.ask_password = _password_answer_with_enter(
+            "synthetic-wrong-package-ui-password",
+        )
+        ui.show_alert = lambda *args: alerts.append(args)
+        app.root.deiconify()
+        app.root.update()
+        app.unlock(vault_path)
+        assert app.session is None
+        assert alerts == [(
+            app.root, "Não foi possível abrir a base",
+            "A senha pode estar incorreta ou o arquivo pode estar inválido ou indisponível.",
+        )]
+        ui.ask_password = _password_answer_with_enter("synthetic-package-ui-password")
+        app.unlock(vault_path)
+    finally:
+        ui.ask_password, ui.show_alert = ask_password, show_alert
     entry = app._active_entry()
     assert entry is not None
     assert entry["title"] == "Nota do teste empacotado"
@@ -176,6 +201,20 @@ def _close_and_reopen_vault(app, vault_path: Path) -> None:
     )
     assert persisted.snapshot.document["entries"][0]["tags"] == ["modo-foco"]
     persisted.close()
+
+
+def _password_answer_with_enter(password: str):
+    """Submete o diálogo de senha real pelo evento Enter no widget empacotado."""
+    def answer(parent, title, prompt, submit_label):
+        dialog = ui.PasswordDialog(parent, title, prompt, submit_label)
+        dialog.password_entry.insert(0, password)
+        dialog.window.after_idle(
+            lambda: dialog.password_entry.event_generate("<Return>", when="now"),
+        )
+        parent.wait_window(dialog.window)
+        return dialog.result
+
+    return answer
 
 
 def main() -> None:

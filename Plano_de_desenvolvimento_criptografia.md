@@ -1,7 +1,7 @@
 # Plano de desenvolvimento do banco criptografado
 
 **Branch:** `feature/vault-encryption`
-**Estado:** protótipo CPV1 implementado; o backend real passou em round-trip com fixtures sintéticas e a UI na branch de integração já usa sua fachada. O ciclo completo pela build atual do `.app` ainda não foi validado e o protótipo não está pronto para dados pessoais.
+**Estado:** protótipo CPV1 implementado; o backend real passou em round-trip com fixtures sintéticas e a UI na branch de integração usa sua fachada. Os probes automatizados da build arm64 atual passaram, incluindo senha incorreta/correta, troca de senha e persistência. A interação física no bundle principal e outros gates de segurança continuam pendentes antes de dados pessoais.
 
 Este é o roteiro de execução para o agente desenvolvedor e o agente cético. A especificação técnica única está em [`Decisao_de_arquitetura_cofre.md`](Decisao_de_arquitetura_cofre.md). O plano cobre o armazenamento local de textos e imagens e a função que protege o arquivo inteiro com senha.
 
@@ -9,13 +9,13 @@ Este é o roteiro de execução para o agente desenvolvedor e o agente cético. 
 
 O programa organiza textos e imagens num arquivo e usa uma biblioteca pronta para cifrar o conteúdo e detectar alterações. A UI já se comunica com o núcleo por sua fachada pública; falta concluir a validação do ciclo integrado no `.app` atual.
 
-Isso ainda é um protótipo: PyNaCl 1.6.2 está instalado no ambiente do projeto e o fluxo real passou com textos e imagens sintéticos, inclusive uma amostra de um milhão de palavras. Não testamos um arquivo de 40 MB; esse foi apenas um cenário hipotético, não um requisito. Uma prova do `.app` e probes empacotados existem, mas falta validar o ciclo completo pela build atual e medir Argon2id nesse runtime. Enquanto o caderno estiver aberto, o conteúdo e a chave precisam existir na memória do programa.
+Isso ainda é um protótipo: PyNaCl 1.6.2 está instalado no ambiente do projeto e o fluxo real passou com textos e imagens sintéticos, inclusive uma amostra de um milhão de palavras. Não testamos um arquivo de 40 MB; esse foi apenas um cenário hipotético, não um requisito. Os probes da build atual mediram Argon2id e passaram no ciclo empacotado; falta interação física no bundle principal e avaliação em outros Macs. Enquanto o caderno estiver aberto, o conteúdo e a chave precisam existir na memória do programa.
 
-**Estado atual:** o núcleo e o benchmark inicial foram testados no runtime Python deste Mac. A revisão cética dos testes do núcleo não encontrou achados críticos/altos abertos. A UI já integra a fachada com fixtures sintéticas; dados pessoais e distribuição aguardam validação do ciclo completo na build atual do `.app` arm64.
+**Estado atual:** o núcleo e o benchmark foram testados no runtime Python deste Mac, e a build arm64 atual passou os probes criptográficos e UI empacotados. A revisão cética dos testes do núcleo não encontrou achados críticos/altos abertos. Dados pessoais e distribuição aguardam os gates restantes, incluindo falhas de persistência no app, backup/restauração e auditoria de gravação em claro.
 
 ## Critério de validação do núcleo
 
-O critério do núcleo é comprovar que uma fixture sintética de textos e imagem pode ser criada, aberta, editada, salva e reaberta como um único arquivo criptografado, e que senha errada, adulteração, truncamento e falha de gravação não entregam conteúdo parcial nem destroem uma versão válida. Esse critério foi exercitado no backend Python com PyNaCl real e fixtures sintéticas. A UI agora usa a fachada; falta completar a validação do ciclo pela build atual do `.app` arm64 antes de dados pessoais.
+O critério do núcleo é comprovar que uma fixture sintética de textos e imagem pode ser criada, aberta, editada, salva e reaberta como um único arquivo criptografado, e que senha errada, adulteração, truncamento e falha de gravação não entregam conteúdo parcial nem destroem uma versão válida. Esse critério passou no backend Python e nos probes da build atual arm64 com PyNaCl real e fixtures sintéticas. A janela principal foi iniciada em perfil temporário; cliques e digitação física no bundle principal ainda não foram exercitados.
 
 ## Limites de trabalho
 
@@ -36,9 +36,10 @@ O critério do núcleo é comprovar que uma fixture sintética de textos e image
 - [x] Testar em cofre real alteração do salt autenticado e de byte de ciphertext, truncamento, remoção integral do frame final, bytes extras e perfil KDF desconhecido; falhas autenticadas/estruturais não constroem sessão nem publicam snapshot.
 - [x] Medir o pico de memória do processo no cenário de um milhão de palavras em Mac arm64.
 - [x] Medir tempo e memória do Argon2id no runtime Mac arm64 disponível com `scripts/benchmark_argon2id.py`.
-- [ ] Repetir a medição com o `.app` empacotado e avaliar máquinas Mac mais lentas suportadas.
+- [x] Medir no runtime PyInstaller atual: Argon2id MODERATE, 3 amostras, mediana 2,4367 s (2,3288–2,5196 s); pico RSS do processo 310.886.400 B, incluindo o runtime e não isolado da KDF.
+- [ ] Avaliar desempenho e memória em Macs mais lentos suportados quando houver alvo de distribuição.
 
-**Saída da etapa:** round-trip, pico do processo, testes reais de falhas e benchmark inicial do Argon2id concluídos com fixture/runtime atuais. Permanece pendente validar no `.app` e avaliar máquinas mais lentas.
+**Saída da etapa:** round-trip, pico do processo, testes reais de falhas e benchmark inicial do Argon2id concluídos. O runtime PyInstaller arm64 também passou no probe de criação/abertura/salvamento e troca de senha, e o bundle principal iniciou em perfil sintético. Permanecem pendentes a interação física com o bundle principal e a avaliação em Macs mais lentos.
 
 ### 2. Fechar o contrato dos dados
 
@@ -74,12 +75,12 @@ O critério do núcleo é comprovar que uma fixture sintética de textos e image
 ### 5. Preparar integração, sem acoplar o núcleo à UI
 
 - [x] Manter importações do pacote independentes de Tkinter/UI.
-- [ ] Validar offline o funcionamento do backend criptográfico pela build atual do `.app`.
+- [x] Validar offline o funcionamento do backend criptográfico pelo probe PyInstaller da build arm64 atual: criação, salvamento, reabertura, senha errada, troca e rejeição da senha antiga.
 - [ ] Manter docstrings nas APIs públicas e nas etapas criptográficas/de persistência críticas; explicitar propósito, contrato, falhas e garantias sem narrar cada linha.
 - [x] Confirmar que PyNaCl/libsodium entra corretamente na prova inicial do `.app` macOS arm64.
-- [ ] Medir KDF e memória na build atual empacotada.
-- [x] Integrar criar/selecionar/desbloquear base e salvar snapshots pela API; manter formato CPV1 fora da UI e mostrar mensagem genérica em qualquer falha de abertura. A integração com fixtures está implementada; o ciclo completo pela build atual continua pendente.
-- [ ] Validar no `.app` os fluxos de criar, abrir, salvar, reabrir, trocar senha e recusar senha errada antes de considerar o ciclo de integração concluído.
+- [x] Medir KDF e RSS máximo do processo na build atual empacotada; os resultados e limites estão registrados na etapa 1.
+- [x] Integrar criar/selecionar/desbloquear base e salvar snapshots pela API; manter formato CPV1 fora da UI e mostrar mensagem genérica em qualquer falha de abertura. O probe empacotado cobre o ciclo sintético de notas pela UI.
+- [x] Validar automaticamente no runtime empacotado criar/abrir/salvar/reabrir e senha errada/correta na UI; o probe de backend também cobre troca de senha. Interação física com o bundle principal continua pendente.
 
 A UI será integrada em fatias verticais na branch `feature/ui-vault-integration`, usando a fachada pública e fixtures sintéticas. A sequência e os papéis dos agentes estão no “Processo de desenvolvimento da UI e das funcionalidades” do [`Plano_do_projeto.md`](Plano_do_projeto.md). A prova `.app` arm64 pode avançar em paralelo; dados pessoais continuam bloqueados até os gates de integração descritos ali.
 
@@ -114,7 +115,8 @@ A UI será integrada em fatias verticais na branch `feature/ui-vault-integration
 - [x] Testar troca de senha real: senha nova abre o cofre, senha antiga é rejeitada e documento/anexos permanecem iguais.
 - [x] Testar adulteração de ciphertext/salt autenticado, cabeçalho com perfil desconhecido, truncamento, ausência do marcador final e bytes extras em arquivo cifrado real.
 - [x] Medir Argon2id no Mac arm64 atual com script reproduzível.
-- [ ] Validar a medição no `.app` e em Macs mais lentos suportados.
+- [x] Medir Argon2id no runtime `.app` arm64 atual: três amostras, mediana de 2,4367 s. O RSS de pico inclui o processo inteiro, não isola a alocação da KDF.
+- [ ] Avaliar o desempenho em Macs mais lentos suportados.
 
 ### Observações da revisão cética dos testes criptográficos e benchmark
 

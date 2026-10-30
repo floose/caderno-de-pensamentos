@@ -4,6 +4,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from caderno.vault import VaultSnapshot, create_vault, open_vault
+from caderno.vault.model import AuthenticationError
+
+OLD_PASSWORD = "synthetic-package-smoke-password"
+NEW_PASSWORD = "synthetic-package-smoke-new-password"
 
 
 def _snapshot(title: str) -> VaultSnapshot:
@@ -25,16 +29,29 @@ def main() -> None:
     """Cria, abre, edita, salva e reabre um cofre temporário com o backend empacotado."""
     with TemporaryDirectory(prefix="caderno-package-smoke-", dir="/private/tmp") as directory:
         path = Path(directory) / "synthetic.cpv"
-        session = create_vault(path, "synthetic-package-smoke-password", _snapshot("Criada"))
+        session = create_vault(path, OLD_PASSWORD, _snapshot("Criada"))
         session.close()
-        session = open_vault(path, "synthetic-package-smoke-password")
+        session = open_vault(path, OLD_PASSWORD)
         assert session.snapshot.document["entries"][0]["title"] == "Criada"
         session.save(_snapshot("Editada"))
+        session.change_password(NEW_PASSWORD)
         session.close()
-        session = open_vault(path, "synthetic-package-smoke-password")
+        try:
+            open_vault(path, OLD_PASSWORD)
+        except AuthenticationError:
+            pass
+        else:
+            raise AssertionError("A senha anterior ainda abriu o cofre")
+        try:
+            open_vault(path, "synthetic-package-wrong-password")
+        except AuthenticationError:
+            pass
+        else:
+            raise AssertionError("Uma senha incorreta abriu o cofre")
+        session = open_vault(path, NEW_PASSWORD)
         assert session.snapshot.document["entries"][0]["title"] == "Editada"
         session.close()
-    print("Roundtrip CPV1 no runtime empacotado passou.")
+    print("Roundtrip CPV1, senha incorreta e troca de senha no runtime empacotado passaram.")
 
 
 if __name__ == "__main__":

@@ -44,6 +44,15 @@ export PYINSTALLER_CONFIG_DIR="$BUILD_ROOT/pyinstaller-config"
     --specpath "$BUILD_ROOT/spec-smoke" \
     "$PROJECT_ROOT/scripts/package_vault_smoke.py"
 
+"$PYTHON_BIN" -m PyInstaller \
+    --noconfirm --clean --onedir --console --name CadernoArgon2Probe \
+    --paths "$PROJECT_ROOT/src" \
+    --collect-all nacl --collect-all cffi \
+    --distpath "$BUILD_ROOT/argon2-dist" \
+    --workpath "$BUILD_ROOT/work-argon2" \
+    --specpath "$BUILD_ROOT/spec-argon2" \
+    "$PROJECT_ROOT/scripts/benchmark_argon2id.py"
+
 UI_SMOKE_NAME="CadernoUISmoke$$"
 "$PYTHON_BIN" -m PyInstaller \
     --noconfirm --clean --onedir --windowed --name "$UI_SMOKE_NAME" \
@@ -72,6 +81,8 @@ file "$CFFI_BINARY" | grep -q 'arm64' || fail 'cffi não foi empacotado para arm
 file "$TKINTER_BINARY" | grep -q 'arm64' || fail 'Tkinter não foi empacotado para arm64.'
 
 "$BUILD_ROOT/smoke-dist/CadernoVaultProbe/CadernoVaultProbe"
+printf '\nArgon2id no runtime empacotado (3 amostras):\n'
+"$BUILD_ROOT/argon2-dist/CadernoArgon2Probe/CadernoArgon2Probe" --samples 3
 UI_SMOKE_RESULT="$BUILD_ROOT/ui-smoke-result-$$.txt"
 CADERNO_PACKAGE_UI_SMOKE_RESULT="$UI_SMOKE_RESULT" \
     open -n -W "$BUILD_ROOT/ui-smoke-dist/$UI_SMOKE_NAME.app"
