@@ -1217,6 +1217,11 @@ def test_note_focus_hides_and_restores_chrome_without_replacing_draft():
         setattr(app, name, FakePackWidget(side="left", fill="both", expand=True))
     app.title_entry.value = "Título de rascunho"
     app.body_editor.value = "Corpo longo de rascunho"
+    app.collection_choice = FakeStringVar(value="Projetos")
+    app.tags_entry = FakeTextField()
+    app.tags_entry.value = "#rascunho"
+    app.favorite_choice = True
+    app.saved_favorite = False
     app.content_panel.configure_options = {}
     app.state_area.configure_options = {}
     app.root = Mock()
@@ -1234,9 +1239,13 @@ def test_note_focus_hides_and_restores_chrome_without_replacing_draft():
     assert app.body_frame.manager == "pack"
     assert app.title_entry.value == "Título de rascunho"
     assert app.body_editor.value == "Corpo longo de rascunho"
+    assert app.collection_choice.get() == "Projetos"
+    assert app.tags_entry.value == "#rascunho"
+    assert app.favorite_choice
     assert app.focus_button.configure_options["text"] == "Voltar ao caderno"
+    assert app.body_editor.bindings["<Escape>"] == app._exit_focus_shortcut
 
-    assert app._exit_focus_shortcut() == "break"
+    assert app.body_editor.bindings["<Escape>"](None) == "break"
 
     assert not app.focus_mode
     assert all(getattr(app, name).manager == "pack" for name in (
@@ -1247,8 +1256,58 @@ def test_note_focus_hides_and_restores_chrome_without_replacing_draft():
     assert app.topbar.saved_pack_options["before"] is app.content_panel
     assert app.title_entry.value == "Título de rascunho"
     assert app.body_editor.value == "Corpo longo de rascunho"
+    assert app.collection_choice.get() == "Projetos"
+    assert app.tags_entry.value == "#rascunho"
+    assert app.favorite_choice
+    assert app.body_editor.bindings["<Escape>"] == app._cancel_edit_shortcut
     assert app.focus_button.configure_options["text"] == "Expandir escrita"
-    app.root.unbind.assert_called_once_with("<Escape>", "focus-escape-binding")
+
+    app.enter_note_focus()
+    root_escape = app.root.bind.call_args.args[1]
+    assert root_escape(None) == "break"
+    assert not app.focus_mode
+    assert app.root.unbind.call_count == 2
+
+
+def test_save_without_title_exits_note_focus_before_focusing_hidden_field(monkeypatch):
+    app = app_for_invalid_note_save(title="", tags="")
+    monkeypatch.setattr(ui, "show_alert", Mock())
+
+    assert not app.save_entry()
+
+    assert not app.focus_mode
+    app.exit_note_focus.assert_called_once_with()
+    app.title_entry.focus_set.assert_called_once_with()
+
+
+def test_save_with_invalid_tag_exits_note_focus_before_focusing_hidden_field(monkeypatch):
+    app = app_for_invalid_note_save(title="Nota válida", tags="#" + "x" * 257)
+    monkeypatch.setattr(ui, "show_alert", Mock())
+
+    assert not app.save_entry()
+
+    assert not app.focus_mode
+    app.exit_note_focus.assert_called_once_with()
+    app.tags_entry.focus_set.assert_called_once_with()
+
+
+def app_for_invalid_note_save(title, tags):
+    app = bare_app()
+    app.session = Mock(snapshot=Mock(document={
+        "collections": [{"id": "collection-1", "name": "Geral"}],
+    }))
+    app.title_entry = Mock()
+    app.title_entry.get.return_value = title
+    app.body_editor = Mock()
+    app.body_editor.get.return_value = "rascunho"
+    app.tags_entry = Mock()
+    app.tags_entry.get.return_value = tags
+    app.collection_choice = FakeStringVar(value="Geral")
+    app.collection_id_by_label = {"Geral": "collection-1"}
+    app.editor_metadata_ready = True
+    app.focus_mode = True
+    app.exit_note_focus = Mock(side_effect=lambda: setattr(app, "focus_mode", False))
+    return app
 
 
 def test_note_editor_connects_vertical_scrollbar_to_text_widget(monkeypatch):

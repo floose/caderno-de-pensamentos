@@ -70,7 +70,7 @@ printf 'Na base aberta, busque termos de título, coleção, hashtag e conteúdo
 printf 'Abra Filtrar: escolha uma coleção e uma hashtag, aplique e confira que ambos restringem a lista junto com a busca. Use Todas as coleções/hashtags para limpar; Escape cancela sem alterar filtros. Fechar a base limpa os filtros.\n'
 printf 'Abra Ordenar e experimente última edição, data de criação e título em ordem crescente/decrescente. A ordem escolhida deve mudar a lista e voltar ao padrão ao trocar de base.\n'
 printf 'No editor, alterne ☆ Favoritar/★ Favorita, salve e feche/reabra a base: o estado deve persistir. Em Filtrar, marque Somente favoritas e confirme que notas não favoritas somem; desmarque para voltar à lista completa.\n'
-printf 'No editor, clique em Expandir escrita: a navegação, lista e metadados devem sumir e o texto ocupar a altura disponível. Digite um rascunho, use Escape ou Voltar ao caderno e confirme que o texto continua intacto. Teste também Salvar enquanto expandido e confira que a tela permanece ampliada.\n'
+printf 'No editor, clique em Expandir escrita: a navegação, lista e metadados devem sumir e o texto ocupar a altura disponível. Redimensione a janela, use Escape ou Voltar ao caderno e confirme que o rascunho e os metadados continuam intactos. Teste Salvar expandido e, com título vazio ou hashtag acima de 256 caracteres, confirme que a validação retorna ao campo visível.\n'
 printf 'No seletor de coleção, teste ⌘S para salvar e Escape para abrir as opções de alterações pendentes.\n'
 printf 'Salve, feche e reabra a base: coleção e hashtags devem continuar na nota.\n\n'
 "$PYTHON_BIN" -m caderno

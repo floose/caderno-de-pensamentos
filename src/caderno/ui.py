@@ -1847,12 +1847,12 @@ class CadernoApp:
         title = title.strip()
         if not title:
             show_alert(self.root, "Título necessário", "Dê um título à nota antes de salvar.")
-            self.title_entry.focus_set()
+            self._focus_editor_field(self.title_entry)
             return False
         collection_id, tags = self._editor_metadata()
         if any(len(tag) > 256 for tag in tags):
             show_alert(self.root, "Hashtag inválida", "Cada hashtag pode ter até 256 caracteres.")
-            self.tags_entry.focus_set()
+            self._focus_editor_field(self.tags_entry)
             return False
         snapshot = self.session.snapshot
         document = snapshot.document
@@ -1879,6 +1879,12 @@ class CadernoApp:
             return False
         self._mark_entry_saved(entry, title, body)
         return True
+
+    def _focus_editor_field(self, widget):
+        """Sai do modo expandido antes de mover o foco para um campo oculto."""
+        if self.focus_mode:
+            self.exit_note_focus()
+        widget.focus_set()
 
     def _updated_entry(self, document, title: str, body: str, collection_id, tags: list[str],
                        favorite: bool):

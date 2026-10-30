@@ -26,6 +26,7 @@ def _run_ui_flow(profile: Path) -> None:
         _exercise_note_focus(app)
         _exercise_search_and_filters(app)
         _reject_duplicate_collection(app)
+        _exercise_focus_close(app)
         _close_and_reopen_vault(app, vault_path)
     finally:
         if app.session is not None:
@@ -54,6 +55,18 @@ def _save_synthetic_note(app) -> None:
 
 
 def _exercise_note_focus(app) -> None:
+    ask_text = ui.ask_text
+    try:
+        ui.ask_text = lambda *_args: "Projetos"
+        assert app.add_collection()
+    finally:
+        ui.ask_text = ask_text
+    app.collection_choice.set("Projetos")
+    app.tags_entry.delete(0, "end")
+    app.tags_entry.insert(0, "#modo-foco")
+    app.toggle_favorite()
+    assert app._has_pending_changes()
+
     app.body_editor.insert("end", " Texto escrito no modo expandido.")
     app.enter_note_focus()
     assert app.focus_mode and app.sidebar.winfo_manager() == ""
@@ -62,11 +75,34 @@ def _exercise_note_focus(app) -> None:
     assert app._exit_focus_shortcut() == "break"
     assert not app.focus_mode and app.sidebar.winfo_manager() == "pack"
     assert app.body_editor.get("1.0", "end-1c").endswith("modo expandido.")
+    assert app.collection_choice.get() == "Projetos"
+    assert app.tags_entry.get() == "#modo-foco"
+    assert not app.favorite_choice and app._has_pending_changes()
 
     app.enter_note_focus()
     assert app.save_entry()
     assert app.focus_mode and app.sidebar.winfo_manager() == ""
+    entry = app._active_entry()
+    assert entry["collection_id"] != "default"
+    assert entry["tags"] == ["modo-foco"] and not entry["favorite"]
     app.exit_note_focus()
+
+
+def _exercise_focus_close(app) -> None:
+    app.body_editor.insert("end", " Rascunho para testar fechamento.")
+    app.enter_note_focus()
+    ask_unsaved = ui.ask_unsaved_changes
+    try:
+        ui.ask_unsaved_changes = lambda *_args: "cancel"
+        assert not app.close_vault()
+        assert app.focus_mode and app.body_editor.get("1.0", "end-1c").endswith(
+            "fechamento."
+        )
+        ui.ask_unsaved_changes = lambda *_args: "discard"
+        assert app.close_vault()
+        assert not app.focus_mode and app.session is None
+    finally:
+        ui.ask_unsaved_changes = ask_unsaved
 
 
 def _reject_duplicate_collection(app) -> None:
@@ -74,29 +110,32 @@ def _reject_duplicate_collection(app) -> None:
     ui.ask_text = lambda *_args: "geral"
     ui.show_alert = lambda *args: alerts.append(args)
     assert not app.add_collection()
-    assert [item["name"] for item in app.session.snapshot.document["collections"]] == ["Geral"]
+    assert [item["name"] for item in app.session.snapshot.document["collections"]] == [
+        "Geral", "Projetos",
+    ]
     assert alerts == [(app.root, "Coleção existente", "Já existe uma coleção chamada “geral”.")]
 
 
 def _exercise_search_and_filters(app) -> None:
-    app.set_search_query("empacotamento")
+    app.set_search_query("modo-foco")
     assert app.note_entry_ids == [app.active_entry_id]
     ask_filters = ui.ask_filters
     try:
-        ui.ask_filters = lambda *_args: ("default", "empacotamento", False)
+        collection_id = app._active_entry()["collection_id"]
+        ui.ask_filters = lambda *_args: (collection_id, "modo-foco", False)
         app.choose_filters()
-        assert app.collection_filter_id == "default"
-        assert app.tag_filter == "empacotamento"
+        assert app.collection_filter_id == collection_id
+        assert app.tag_filter == "modo-foco"
         app.set_search_query("sem resultado")
         assert app.note_list.get(0) == "Nenhuma nota encontrada"
         app.set_search_query("")
         assert app.note_entry_ids == [app.active_entry_id]
         ui.ask_filters = lambda *_args: (None, None, True)
         app.choose_filters()
-        assert app.favorites_only and app.note_entry_ids == [app.active_entry_id]
+        assert app.favorites_only and app.note_entry_ids == []
         ui.ask_filters = lambda *_args: (None, None, False)
         app.choose_filters()
-        assert not app.favorites_only
+        assert not app.favorites_only and app.note_entry_ids == [app.active_entry_id]
     finally:
         ui.ask_filters = ask_filters
     ask_choice = ui.ask_choice
@@ -115,13 +154,15 @@ def _close_and_reopen_vault(app, vault_path: Path) -> None:
     entry = app._active_entry()
     assert entry is not None
     assert entry["title"] == "Nota do teste empacotado"
-    assert entry["tags"] == ["teste", "empacotamento"]
-    assert entry["favorite"] is True
+    assert entry["tags"] == ["modo-foco"]
+    assert entry["favorite"] is False
+    assert entry["collection_id"] != "default"
     assert app.close_vault()
     persisted = open_vault(vault_path, "synthetic-package-ui-password")
     assert persisted.snapshot.document["entries"][0]["body_markdown"] == (
         "Conteúdo sintético do smoke test. Texto escrito no modo expandido."
     )
+    assert persisted.snapshot.document["entries"][0]["tags"] == ["modo-foco"]
     persisted.close()
 
 
