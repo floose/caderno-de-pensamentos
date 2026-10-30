@@ -179,7 +179,7 @@ THEME = UITheme(
     font_title=("Georgia", 34), font_heading=("Georgia", 22),
     font_summary=("Georgia", 18), font_mono_small=("Courier New", 10),
     layout=UILayout(
-        window_size=(1180, 760), minimum_window_size=(900, 620),
+        window_size=(1180, 760), minimum_window_size=(1000, 620),
         sidebar_width=250, sidebar_padding_x=18, sidebar_padding_y=24,
         main_horizontal_padding=48, main_vertical_padding=45,
         topbar_vertical_padding=20, state_horizontal_padding=20,
@@ -1528,7 +1528,7 @@ class CadernoApp:
         body = entry["body_markdown"] if entry else ""
         self.saved_title, self.saved_body = title, body
         self._initialize_editor_metadata(entry)
-        self._render_title_field(title)
+        self._render_title_field(title, entry)
         self._render_metadata_fields()
         self._render_body_field(body)
         self._render_editor_actions()
@@ -1548,7 +1548,7 @@ class CadernoApp:
         self.favorite_choice = bool(entry["favorite"]) if entry else False
         self.saved_favorite = self.favorite_choice
 
-    def _render_title_field(self, title):
+    def _render_title_field(self, title, entry):
         header = tk.Frame(self.editor_panel, bg=THEME.state_panel)
         header.pack(fill="x", pady=(0, 5))
         self.title_header = header
@@ -1561,6 +1561,13 @@ class CadernoApp:
             command=self.toggle_favorite,
         )
         self.favorite_button.pack(side="right")
+        self.title_dates = None
+        if entry is not None:
+            self.title_dates = tk.Label(
+                self.editor_panel, text=self._format_note_dates(entry),
+                bg=THEME.state_panel, fg=THEME.muted, font=THEME.font_tiny,
+            )
+            self.title_dates.pack(anchor="w", pady=(0, 8))
         self.title_entry = tk.Entry(
             self.editor_panel, bg=THEME.panel, fg=THEME.ink,
             insertbackground=THEME.green, font=THEME.font_heading,
@@ -1596,6 +1603,9 @@ class CadernoApp:
             collection_column, selected_label, "secondary", pady=5,
             command=self.choose_collection,
         )
+        self.collection_selector.configure(
+            wraplength=180, justify="left", anchor="w",
+        )
         self.collection_selector.pack(fill="x")
         tk.Label(
             tags_column, text="Hashtags", bg=THEME.state_panel,
@@ -1612,11 +1622,18 @@ class CadernoApp:
         self.editor_metadata_ready = True
 
     def _render_body_field(self, body):
+        self.body_header = tk.Frame(self.editor_panel, bg=THEME.state_panel)
+        self.body_header.pack(fill="x", pady=(0, 5))
         self.body_label = tk.Label(
-            self.editor_panel, text="Texto", bg=THEME.state_panel,
+            self.body_header, text="Texto", bg=THEME.state_panel,
             fg=THEME.ink, font=THEME.font_label,
         )
-        self.body_label.pack(anchor="w", pady=(0, 5))
+        self.body_label.pack(side="left")
+        self.focus_button = make_button(
+            self.body_header, "Expandir escrita", "secondary", pady=5,
+            command=self.toggle_note_focus,
+        )
+        self.focus_button.pack(side="right")
         body_frame = tk.Frame(self.editor_panel, bg=THEME.state_panel)
         body_frame.pack(fill="both", expand=True)
         self.body_frame = body_frame
@@ -1643,11 +1660,6 @@ class CadernoApp:
         actions = tk.Frame(self.editor_panel, bg=THEME.state_panel)
         actions.pack(fill="x", pady=(12, 0))
         self.editor_actions = actions
-        self.focus_button = make_button(
-            actions, "Expandir escrita", "secondary", pady=8,
-            command=self.toggle_note_focus,
-        )
-        self.focus_button.pack(side="left")
         make_button(
             actions, "Salvar  ⌘S", "primary", pady=8, command=self.save_entry,
         ).pack(side="right")
@@ -1655,6 +1667,17 @@ class CadernoApp:
             actions, "Descartar alterações", "secondary", pady=8,
             command=self.discard_editor_changes,
         ).pack(side="right", padx=(0, 8))
+
+    @staticmethod
+    def _format_note_dates(entry):
+        created = CadernoApp._format_note_date(entry["created_at"])
+        updated = CadernoApp._format_note_date(entry["updated_at"])
+        return f"Criada em {created}  ·  Modificada em {updated}"
+
+    @staticmethod
+    def _format_note_date(timestamp: str) -> str:
+        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        return parsed.astimezone().strftime("%d/%m/%Y")
 
     def toggle_note_focus(self):
         """Expande ou restaura o editor sem substituir o widget do rascunho."""
@@ -1667,11 +1690,13 @@ class CadernoApp:
         """Oculta a navegação e metadados para ampliar a área de escrita."""
         if self.focus_mode:
             return
-        hidden = (
+        hidden = [
             self.sidebar, self.topbar, self.welcome_area, self.summary_area,
             self.search_area, self.note_list_panel, self.title_header,
             self.title_entry, self.metadata_panel, self.body_label,
-        )
+        ]
+        if self.title_dates is not None:
+            hidden.insert(hidden.index(self.title_entry), self.title_dates)
         self._focus_pack_info = {}
         for widget in hidden:
             self._hide_packed_widget(widget, self._focus_restore_anchor(widget))
@@ -1693,10 +1718,11 @@ class CadernoApp:
             self.summary_area: self.search_area,
             self.search_area: self.state_area,
             self.note_list_panel: self.editor_panel,
-            self.title_header: self.title_entry,
+            self.title_header: self.title_dates or self.title_entry,
+            self.title_dates: self.title_entry,
             self.title_entry: self.metadata_panel,
-            self.metadata_panel: self.body_label,
-            self.body_label: self.body_frame,
+            self.metadata_panel: self.body_header,
+            self.body_label: self.focus_button,
         }
         return anchors[widget]
 

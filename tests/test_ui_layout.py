@@ -114,11 +114,20 @@ def test_note_editor_fits_minimum_window_dimensions():
         - 2 * layout.main_horizontal_padding - 2 * layout.state_horizontal_padding
         - layout.notes_list_width - layout.notes_list_gap
     )
+    action_button_width = sum(
+        _text_width(theme.font_button, label)
+        + 2 * layout.button_horizontal_padding
+        + 2 * layout.highlight_thickness
+        for label in ("Salvar  ⌘S", "Descartar alterações")
+    ) + 8
+    metadata_column_width = (editor_width - 8) / 2
 
     assert editor_content_height > required_editor_height
-    assert editor_width >= 300
-    assert (editor_width - 8) / 2 >= 140
-    assert _text_width(theme.font_label, "Hashtags") <= (editor_width - 8) / 2
+    assert layout.minimum_window_size[0] >= 1000
+    assert editor_width >= 400
+    assert action_button_width <= editor_width
+    assert metadata_column_width >= 190
+    assert _text_width(theme.font_label, "Hashtags") <= metadata_column_width
 
 
 def test_password_dialog_text_and_actions_fit_its_theme_geometry():

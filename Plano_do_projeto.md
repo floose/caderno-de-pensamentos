@@ -55,7 +55,7 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 - [x] Exercitar o backend PyNaCl real com fixtures sintéticas, inclusive um milhão de palavras e imagens.
 - [x] Testar corrupção, salvamento/reabertura e troca de senha pelo backend criptográfico real com fixtures sintéticas; medir Argon2id no runtime Mac atual. Resultados e limites em [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
 - [ ] Validar o ciclo integrado completo de cofre e o perfil Argon2id pela UI do `.app` arm64 antes de usar dados pessoais.
-- [x] Integrar o cofre com texto, coleções, hashtags e favoritos na UI; datas e imagens seguem pendentes.
+- [x] Integrar o cofre com texto, coleções, hashtags, favoritos e exibição das datas da nota na UI; anexos e calendário seguem pendentes.
 - [ ] Planejar backup e migração de versões do formato.
 - [ ] Comunicar claramente que uma senha perdida não permite recuperar o conteúdo.
 
@@ -77,6 +77,7 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 - [x] Implementar opções de ordenação por data de edição, criação e título, em ambos os sentidos.
 - [x] Implementar favoritos persistentes no editor, protegidos por salvar/descartar/cancelar, e filtro combinável com coleção, hashtag e busca.
 - [x] Implementar modo de foco que expande a escrita na janela atual e restaura a navegação sem perder o rascunho.
+- [x] Exibir datas de criação e última modificação no editor e proteger botões contra compressão horizontal com largura mínima e quebra de nomes longos de coleção.
 - [ ] Implementar editor e visualização Markdown, incluindo blocos de código e equações.
 - [ ] Implementar anexar imagens por arquivo e colagem da área de transferência.
 - [ ] Implementar calendário baseado nas datas dos textos.
@@ -193,7 +194,7 @@ Legenda: ██ trabalho previsto; .. sem atividade prevista.
 ## Acompanhamento
 
 - **Estado atual:** primeira versão restrita a Apple Silicon (`arm64`), macOS 14 Sonoma ou posterior, Tkinter e distribuição inicial para uso próprio/testes.
-- **Estado da UI:** criar, escolher, abrir e fechar base estão implementados. Notas podem ser listadas, criadas e editadas com rascunho local e salvamento explícito; coleção, hashtags e favoritos são editáveis e persistidos, e o fechamento protege alterações pendentes inclusive nos metadados. O modo de foco amplia a escrita, preserva o rascunho e retorna a campos inválidos quando a validação falha. Busca, filtros por coleção/hashtag/favoritos e ordenação por data de edição, criação ou título estão implementados. Alertas, entradas de texto, filtros, seletores de coleção, ordenação e navegação de bases usam modais próprios do app. 91 testes focados, build arm64 e smokes empacotados passaram após revisão cética; o roteiro para janela real está em [`testar_ui.command`](testar_ui.command).
+- **Estado da UI:** criar, escolher, abrir e fechar base estão implementados. Notas podem ser listadas, criadas e editadas com rascunho local e salvamento explícito; coleção, hashtags e favoritos são editáveis e persistidos, e o fechamento protege alterações pendentes inclusive nos metadados. O modo de foco amplia a escrita, preserva o rascunho e retorna a campos inválidos quando a validação falha. O editor exibe criação e última modificação e mantém largura mínima para preservar os controles. Busca, filtros por coleção/hashtag/favoritos e ordenação por data de edição, criação ou título estão implementados. Alertas, entradas de texto, filtros, seletores de coleção, ordenação e navegação de bases usam modais próprios do app. 91 testes focados, build arm64 e smokes empacotados passaram; o roteiro para janela real está em [`testar_ui.command`](testar_ui.command).
 - **Estado do cofre:** protótipo CPV1 isolado, testado com backend PyNaCl e fixtures sintéticas. Resultados e pendências atuais estão em [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
 - **Próximo marco:** repetir na janela do `.app` extraído o fluxo de nomes duplicados, atalhos no seletor e persistência. Validações de sistemas operacionais antigos ficam adiadas para distribuição.
 - **Atualizado em:** 2026-10-29.

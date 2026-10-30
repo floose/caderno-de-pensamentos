@@ -1191,9 +1191,20 @@ def test_note_editor_binds_save_and_cancel_shortcuts_to_all_editable_fields(monk
         FakeDialogWidget(text=label, command=command),
     )
 
-    ui.CadernoApp._render_note_editor(app, None)
+    entry = {
+        "id": "entry-dates", "title": "Nota com datas", "body_markdown": "Texto",
+        "collection_id": "collection-1", "tags": [], "favorite": False,
+        "created_at": "2026-10-20T12:34:56Z", "updated_at": "2026-10-30T14:20:00Z",
+    }
+    ui.CadernoApp._render_note_editor(app, entry)
 
     assert app.focus_button.options["command"] == app.toggle_note_focus
+    assert app.title_dates.options["text"] == ui.CadernoApp._format_note_dates(entry)
+    assert "Criada em 20/10/2026" in app.title_dates.options["text"]
+    assert "Modificada em 30/10/2026" in app.title_dates.options["text"]
+    assert app.collection_selector.configure_options == {
+        "wraplength": 180, "justify": "left", "anchor": "w",
+    }
     for field in (
         app.title_entry, app.tags_entry, app.collection_selector,
         app.favorite_button, app.body_editor,
@@ -1211,7 +1222,8 @@ def test_note_focus_hides_and_restores_chrome_without_replacing_draft():
         "sidebar", "main_panel", "topbar", "content_panel", "welcome_area",
         "summary_area", "search_area", "state_area", "note_list_panel",
         "editor_panel", "title_header", "title_entry", "metadata_panel",
-        "body_label", "body_frame", "body_editor", "focus_button",
+        "title_dates", "body_header", "body_label", "body_frame",
+        "body_editor", "focus_button",
     )
     for name in widget_names:
         setattr(app, name, FakePackWidget(side="left", fill="both", expand=True))
@@ -1235,6 +1247,7 @@ def test_note_focus_hides_and_restores_chrome_without_replacing_draft():
     assert all(getattr(app, name).manager == "" for name in (
         "sidebar", "topbar", "welcome_area", "summary_area", "search_area",
         "note_list_panel", "title_header", "title_entry", "metadata_panel", "body_label",
+        "title_dates",
     ))
     assert app.body_frame.manager == "pack"
     assert app.title_entry.value == "Título de rascunho"
@@ -1251,9 +1264,11 @@ def test_note_focus_hides_and_restores_chrome_without_replacing_draft():
     assert all(getattr(app, name).manager == "pack" for name in (
         "sidebar", "topbar", "welcome_area", "summary_area", "search_area",
         "note_list_panel", "title_header", "title_entry", "metadata_panel", "body_label",
+        "title_dates",
     ))
     assert app.sidebar.saved_pack_options["before"] is app.main_panel
     assert app.topbar.saved_pack_options["before"] is app.content_panel
+    assert app.metadata_panel.saved_pack_options["before"] is app.body_header
     assert app.title_entry.value == "Título de rascunho"
     assert app.body_editor.value == "Corpo longo de rascunho"
     assert app.collection_choice.get() == "Projetos"
@@ -1348,7 +1363,7 @@ def test_main_window_applies_minimum_size_from_shared_layout(monkeypatch):
     ui.CadernoApp(root)
 
     root.geometry.assert_called_once_with("1180x760")
-    root.minsize.assert_called_once_with(900, 620)
+    root.minsize.assert_called_once_with(1000, 620)
 
 
 def test_locked_and_unlocked_views_choose_the_shared_button_variants():

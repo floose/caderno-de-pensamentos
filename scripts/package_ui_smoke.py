@@ -20,6 +20,7 @@ def _run_ui_flow(profile: Path) -> None:
     root = tk.Tk()
     root.withdraw()
     app = ui.CadernoApp(root)
+    assert root.minsize()[0] >= 1000
     try:
         _create_empty_vault(app, vault_path)
         _save_synthetic_note(app)
@@ -42,6 +43,7 @@ def _create_empty_vault(app, vault_path: Path) -> None:
 
 def _save_synthetic_note(app) -> None:
     app.new_entry()
+    assert app.title_dates is None
     app.title_entry.insert(0, "Nota do teste empacotado")
     app.body_editor.insert("1.0", "Conteúdo sintético do smoke test.")
     app.tags_entry.insert(0, "#teste, #empacotamento")
@@ -52,6 +54,8 @@ def _save_synthetic_note(app) -> None:
     assert entry["body_markdown"] == "Conteúdo sintético do smoke test."
     assert entry["tags"] == ["teste", "empacotamento"]
     assert entry["favorite"] is True
+    assert "Criada em " in app.title_dates.cget("text")
+    assert "Modificada em " in app.title_dates.cget("text")
 
 
 def _exercise_note_focus(app) -> None:
