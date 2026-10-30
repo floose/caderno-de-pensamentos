@@ -65,6 +65,7 @@ printf '\nAbrindo o Caderno com perfil de teste em: %s\n' "$TEST_DATA_DIR"
 printf 'Use somente cofres sintéticos neste perfil de teste.\n\n'
 printf 'Na janela, crie uma coleção pelo +: a entrada do nome e os alertas devem usar diálogos do próprio Caderno, com cores e fontes do tema. Escape cancela a entrada; Enter ou Criar confirma.\n'
 printf 'Associe a coleção a uma nota e informe hashtags como #ideia, #projeto. Tente criar outra coleção com o mesmo nome, inclusive mudando maiúsculas: o popup informa que ela já existe e não a cria.\n'
+printf 'Os seletores de abrir/criar base e coleção devem usar janelas do Caderno. Teste navegar por pastas, filtrar bases .cpv e usar Cancelar/Escape; a janela de coleção deve permitir escolher ou cancelar.\n'
 printf 'No seletor de coleção, teste ⌘S para salvar e Escape para abrir as opções de alterações pendentes.\n'
 printf 'Salve, feche e reabra a base: coleção e hashtags devem continuar na nota.\n\n'
 "$PYTHON_BIN" -m caderno

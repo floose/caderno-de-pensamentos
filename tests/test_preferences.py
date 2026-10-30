@@ -46,6 +46,42 @@ def test_config_directory_can_be_isolated_for_manual_ui_testing(tmp_path, monkey
     assert preferences._preferences_file() == tmp_path / "Caderno de Pensamentos" / "preferences.json"
 
 
+def test_preferences_use_platform_configuration_directories(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setattr(preferences.Path, "home", lambda: home)
+    monkeypatch.delenv("CADERNO_CONFIG_DIR", raising=False)
+
+    monkeypatch.setattr(preferences.sys, "platform", "darwin")
+    assert preferences._preferences_file() == (
+        home / "Library" / "Application Support" / "Caderno de Pensamentos" / "preferences.json"
+    )
+
+    app_data = tmp_path / "roaming"
+    monkeypatch.setenv("APPDATA", str(app_data))
+    monkeypatch.setattr(preferences.sys, "platform", "win32")
+    assert preferences._preferences_file() == app_data / "Caderno de Pensamentos" / "preferences.json"
+
+    xdg_config = tmp_path / "xdg-config"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg_config))
+    monkeypatch.setattr(preferences.sys, "platform", "linux")
+    assert preferences._preferences_file() == xdg_config / "Caderno de Pensamentos" / "preferences.json"
+
+
+def test_preferences_use_platform_defaults_when_environment_is_missing(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setattr(preferences.Path, "home", lambda: home)
+    monkeypatch.delenv("CADERNO_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
+    monkeypatch.setattr(preferences.sys, "platform", "win32")
+    assert preferences._preferences_file() == (
+        home / "AppData" / "Roaming" / "Caderno de Pensamentos" / "preferences.json"
+    )
+    monkeypatch.setattr(preferences.sys, "platform", "linux")
+    assert preferences._preferences_file() == home / ".config" / "Caderno de Pensamentos" / "preferences.json"
+
+
 def test_override_never_changes_permissions_on_the_supplied_profile_root(tmp_path, monkeypatch):
     profile = tmp_path / "profile"
     profile.mkdir(mode=0o755)

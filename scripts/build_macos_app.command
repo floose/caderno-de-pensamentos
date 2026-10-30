@@ -44,6 +44,16 @@ export PYINSTALLER_CONFIG_DIR="$BUILD_ROOT/pyinstaller-config"
     --specpath "$BUILD_ROOT/spec-smoke" \
     "$PROJECT_ROOT/scripts/package_vault_smoke.py"
 
+UI_SMOKE_NAME="CadernoUISmoke$$"
+"$PYTHON_BIN" -m PyInstaller \
+    --noconfirm --clean --onedir --windowed --name "$UI_SMOKE_NAME" \
+    --paths "$PROJECT_ROOT/src" \
+    --collect-all nacl --collect-all cffi \
+    --distpath "$BUILD_ROOT/ui-smoke-dist" \
+    --workpath "$BUILD_ROOT/work-ui-smoke" \
+    --specpath "$BUILD_ROOT/spec-ui-smoke" \
+    "$PROJECT_ROOT/scripts/package_ui_smoke.py"
+
 APP_BUNDLE="$BUILD_ROOT/dist/Caderno.app"
 APP_EXECUTABLE="$APP_BUNDLE/Contents/MacOS/Caderno"
 SODIUM_BINARY="$APP_BUNDLE/Contents/Frameworks/nacl/_sodium.abi3.so"
@@ -62,4 +72,13 @@ file "$CFFI_BINARY" | grep -q 'arm64' || fail 'cffi não foi empacotado para arm
 file "$TKINTER_BINARY" | grep -q 'arm64' || fail 'Tkinter não foi empacotado para arm64.'
 
 "$BUILD_ROOT/smoke-dist/CadernoVaultProbe/CadernoVaultProbe"
+UI_SMOKE_RESULT="$BUILD_ROOT/ui-smoke-result-$$.txt"
+CADERNO_PACKAGE_UI_SMOKE_RESULT="$UI_SMOKE_RESULT" \
+    open -n -W "$BUILD_ROOT/ui-smoke-dist/$UI_SMOKE_NAME.app"
+[ -f "$UI_SMOKE_RESULT" ] || fail 'O smoke test da UI empacotada não gravou um resultado.'
+grep -q '^PASS:' "$UI_SMOKE_RESULT" || {
+    cat "$UI_SMOKE_RESULT" >&2
+    fail 'O smoke test da UI empacotada falhou.'
+}
+cat "$UI_SMOKE_RESULT"
 printf '\nApp de prova: %s\n' "$APP_BUNDLE"

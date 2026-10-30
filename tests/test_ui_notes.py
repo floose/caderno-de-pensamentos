@@ -159,6 +159,37 @@ def test_collection_and_tags_edits_are_confirmed_and_persisted(tmp_path, monkeyp
     reopened.close()
 
 
+def test_collection_choice_updates_draft_label_without_saving(tmp_path, monkeypatch):
+    path = tmp_path / "synthetic-choice-test.cpv"
+    session = create_vault(path, "synthetic-password", VaultSnapshot({
+        "schema_version": 1,
+        "collections": [
+            {"id": "collection-general", "name": "Geral"},
+            {"id": "collection-projects", "name": "Projetos"},
+        ],
+        "attachments": [], "entries": [],
+    }))
+    app = app_with_editor(session)
+    app.collection_options = [("Geral", "collection-general"), ("Projetos", "collection-projects")]
+    app.collection_id_by_label = dict(app.collection_options)
+    app.collection_choice = FakeEntry("Geral")
+    app.collection_choice.set = lambda value: setattr(app.collection_choice, "value", value)
+    app.collection_selector = Mock()
+    choose = Mock(return_value="collection-projects")
+    monkeypatch.setattr(ui, "ask_choice", choose)
+
+    ui.CadernoApp.choose_collection(app)
+
+    assert app.collection_choice.value == "Projetos"
+    app.collection_selector.configure.assert_called_once_with(text="Projetos")
+    choose.assert_called_once_with(
+        app.root, "Coleção da nota", "Escolha uma coleção para esta nota.",
+        app.collection_options, "collection-general",
+    )
+    assert session.snapshot.document["entries"] == []
+    session.close()
+
+
 def test_add_collection_persists_real_vault_and_rejects_duplicate_name(tmp_path, monkeypatch):
     path = tmp_path / "synthetic-collection-test.cpv"
     session = create_vault(path, "synthetic-password", VaultSnapshot({
@@ -182,6 +213,30 @@ def test_add_collection_persists_real_vault_and_rejects_duplicate_name(tmp_path,
         app.root, "Coleção existente", "Já existe uma coleção chamada “geral”.",
     )
     app.refresh_notes.assert_called_once_with()
+    session.close()
+
+
+def test_add_collection_cancel_and_blank_name_do_not_persist(tmp_path, monkeypatch):
+    path = tmp_path / "synthetic-cancel-collection.cpv"
+    session = create_vault(path, "synthetic-password", VaultSnapshot({
+        "schema_version": 1,
+        "collections": [{"id": "collection-general", "name": "Geral"}],
+        "attachments": [], "entries": [],
+    }))
+    app = app_with_editor(session)
+    prompt = Mock(side_effect=(None, "   "))
+    alert = Mock()
+    monkeypatch.setattr(ui, "ask_text", prompt)
+    monkeypatch.setattr(ui, "show_alert", alert)
+    save = Mock(wraps=session.save)
+    session.save = save
+
+    assert not app.add_collection()
+    assert not app.add_collection()
+
+    assert save.call_count == 0
+    assert [item["name"] for item in session.snapshot.document["collections"]] == ["Geral"]
+    alert.assert_called_once_with(app.root, "Nome inválido", "Informe um nome de até 4096 caracteres.")
     session.close()
 
 

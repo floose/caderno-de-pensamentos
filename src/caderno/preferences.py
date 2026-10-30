@@ -5,16 +5,23 @@ from __future__ import annotations
 import json
 import os
 import stat
+import sys
 import tempfile
 from pathlib import Path
 
 
 def _preferences_file() -> Path:
-    """Retorna preferências macOS, aceitando pasta isolada para testes manuais."""
+    """Retorna o caminho de preferências da plataforma, com override isolado para testes."""
     override = os.environ.get("CADERNO_CONFIG_DIR")
     if override:
         return Path(override).expanduser() / "Caderno de Pensamentos" / "preferences.json"
-    return Path.home() / "Library" / "Application Support" / "Caderno de Pensamentos" / "preferences.json"
+    if sys.platform == "darwin":
+        config_root = Path.home() / "Library" / "Application Support"
+    elif sys.platform == "win32":
+        config_root = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+    else:
+        config_root = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    return config_root / "Caderno de Pensamentos" / "preferences.json"
 
 
 def load_last_vault() -> Path | None:

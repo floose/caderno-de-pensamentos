@@ -1,24 +1,11 @@
-from pathlib import Path
-
-import pytest
 from PIL import ImageFont
 
 from caderno import ui
 
 
-FONT_DIRECTORY = Path("/System/Library/Fonts/Supplemental")
-
-
 def _font(specification):
-    family, size, *styles = specification
-    style = " Bold" if "bold" in styles else " Italic" if "italic" in styles else ""
-    if family == "Menlo":
-        path = Path("/System/Library/Fonts/Menlo.ttc")
-    else:
-        path = FONT_DIRECTORY / f"{family}{style}.ttf"
-    if not path.exists():
-        pytest.skip(f"Fonte do sistema indisponível para medir layout: {path.name}")
-    return ImageFont.truetype(str(path), size)
+    _family, size, *_styles = specification
+    return ImageFont.load_default(size=size)
 
 
 def _text_width(specification, text):

@@ -65,6 +65,9 @@ class FakeDialogWidget:
     def columnconfigure(self, *_args, **_kwargs):
         pass
 
+    def configure(self, **options):
+        self.configure_options = options
+
     def bind(self, event, callback):
         self.bindings[event] = callback
 
@@ -73,6 +76,9 @@ class FakeDialogWidget:
 
     def get(self):
         return "synthetic password"
+
+    def set(self, *_args):
+        pass
 
 
 class FakeEditorWidget:
@@ -119,6 +125,7 @@ class FakePasswordWindow(FakeDialogWidget):
         self.bindings = {}
         self.protocols = {}
         self.lifecycle = []
+        self.destroyed = False
 
     def title(self, value=None):
         if value is not None:
@@ -129,6 +136,9 @@ class FakePasswordWindow(FakeDialogWidget):
         pass
 
     def resizable(self, *_args):
+        pass
+
+    def minsize(self, *_args):
         pass
 
     def transient(self, *_args):
@@ -165,6 +175,50 @@ class FakePasswordWindow(FakeDialogWidget):
 
 class FakePasswordEntry(FakeDialogWidget):
     pass
+
+
+class FakePathEntry(FakeDialogWidget):
+    def __init__(self, *_args, **options):
+        super().__init__(**options)
+        self.value = ""
+
+    def get(self):
+        return self.value
+
+    def delete(self, *_args):
+        self.value = ""
+
+    def insert(self, _index, value):
+        self.value += value
+
+
+class FakePathListbox(FakeDialogWidget):
+    def __init__(self, *_args, **options):
+        super().__init__(**options)
+        self.items = []
+        self.selection = ()
+
+    def delete(self, *_args):
+        self.items.clear()
+        self.selection = ()
+
+    def insert(self, _index, value):
+        self.items.append(value)
+
+    def curselection(self):
+        return self.selection
+
+    def selection_set(self, index):
+        self.selection = (index,)
+
+    def yview(self, *_args):
+        pass
+
+    def see(self, *_args):
+        pass
+
+    def configure(self, **options):
+        self.configure_options = options
 
 
 class FakePasswordParent:
@@ -251,6 +305,19 @@ def test_alert_dialog_uses_theme_tokens_and_dismisses_with_keyboard(monkeypatch)
     assert dialog.window.destroyed
 
 
+def test_alert_dialog_enter_and_window_close_dismiss(monkeypatch):
+    install_dialog_widgets(monkeypatch)
+    monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
+
+    confirmed = ui.AlertDialog(FakePasswordParent(), "Aviso", "Mensagem")
+    assert confirmed.window.bindings["<Return>"](None) == "break"
+    assert confirmed.window.destroyed
+
+    closed = ui.AlertDialog(FakePasswordParent(), "Aviso", "Mensagem")
+    closed.window.protocols["WM_DELETE_WINDOW"]()
+    assert closed.window.destroyed
+
+
 def test_text_input_dialog_uses_theme_and_supports_submit_or_cancel(monkeypatch):
     install_dialog_widgets(monkeypatch)
     labels = []
@@ -280,6 +347,151 @@ def test_text_input_dialog_uses_theme_and_supports_submit_or_cancel(monkeypatch)
     cancelled = ui.TextInputDialog(FakePasswordParent(), "Nova coleção", "Nome da coleção:")
     cancelled.window.bindings["<Escape>"](None)
     assert cancelled.result is None and cancelled.window.destroyed
+
+
+def test_text_input_dialog_cancel_button_and_window_close_return_no_value(monkeypatch):
+    install_dialog_widgets(monkeypatch)
+    button_options = []
+    monkeypatch.setattr(
+        ui, "make_button",
+        lambda *_args, **kwargs: button_options.append(kwargs) or FakeDialogWidget(),
+    )
+
+    cancelled = ui.TextInputDialog(FakePasswordParent(), "Nova coleção", "Nome:")
+    button_options[0]["command"]()
+    assert cancelled.result is None and cancelled.window.destroyed
+
+    closed = ui.TextInputDialog(FakePasswordParent(), "Nova coleção", "Nome:")
+    closed.window.protocols["WM_DELETE_WINDOW"]()
+    assert closed.result is None and closed.window.destroyed
+
+
+def test_ask_text_waits_for_dialog_and_returns_input(monkeypatch):
+    dialog = Mock(window=object(), result="Projetos")
+    monkeypatch.setattr(ui, "TextInputDialog", Mock(return_value=dialog))
+    parent = FakePasswordParent()
+
+    result = ui.ask_text(parent, "Nova coleção", "Nome:")
+
+    assert result == "Projetos"
+    assert parent.waited_window is dialog.window
+
+
+def install_path_dialog_widgets(monkeypatch):
+    install_dialog_widgets(monkeypatch)
+    monkeypatch.setattr(ui.tk, "Entry", FakePathEntry)
+    monkeypatch.setattr(ui.tk, "Listbox", FakePathListbox)
+    monkeypatch.setattr(ui.tk, "Scrollbar", FakeDialogWidget)
+
+
+def test_path_dialog_uses_theme_and_lists_only_base_files_by_default(tmp_path, monkeypatch):
+    install_path_dialog_widgets(monkeypatch)
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    (profile / "base.cpv").touch()
+    (profile / "nota.txt").touch()
+    (profile / "Colecao").mkdir()
+    labels = []
+    monkeypatch.setattr(
+        ui.tk, "Label",
+        lambda *_args, **options: labels.append(options) or FakeDialogWidget(**options),
+    )
+    monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
+
+    dialog = ui.PathDialog(FakePasswordParent(), "open", profile, profile)
+
+    assert dialog.window.geometry_value == "720x520+330+320"
+    assert dialog.file_list.items == ["[Pasta] Colecao", "base.cpv"]
+    assert dialog.file_list.options["bg"] == ui.THEME.panel
+    assert dialog.file_list.options["font"] == ui.THEME.font_body
+    assert labels[0]["fg"] == ui.THEME.state_title
+    assert dialog.window.lifecycle == ["show", "grab", "focus_scheduled"]
+
+    dialog._toggle_file_filter()
+    assert dialog.file_list.items == ["[Pasta] Colecao", "base.cpv", "nota.txt"]
+    dialog.file_list.selection = (0,)
+    dialog._activate_item()
+    assert dialog.directory == profile / "Colecao"
+    assert dialog.location_entry.value == str(profile / "Colecao")
+
+
+def test_path_dialog_adds_extension_and_rejects_paths_outside_profile(tmp_path, monkeypatch):
+    install_path_dialog_widgets(monkeypatch)
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
+    alert = Mock()
+    monkeypatch.setattr(ui, "show_alert", alert)
+
+    save_dialog = ui.PathDialog(FakePasswordParent(), "save", profile, profile)
+    save_dialog.name_entry.value = "notes"
+    save_dialog.submit()
+    assert save_dialog.result == profile / "notes.cpv"
+    assert save_dialog.window.destroyed
+
+    blocked = ui.PathDialog(FakePasswordParent(), "save", profile, profile)
+    blocked.name_entry.value = str(outside / "real.cpv")
+    blocked.submit()
+    assert blocked.result is None
+    assert not blocked.window.destroyed
+    alert.assert_called_once()
+
+
+def test_path_dialog_escape_cancels_and_all_files_filter_opens_other_extensions(tmp_path, monkeypatch):
+    install_path_dialog_widgets(monkeypatch)
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    (profile / "note.txt").touch()
+    monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
+    alert = Mock()
+    monkeypatch.setattr(ui, "show_alert", alert)
+
+    dialog = ui.PathDialog(FakePasswordParent(), "open", profile, profile)
+    dialog.name_entry.value = "note.txt"
+    dialog.submit()
+    assert dialog.result is None and not dialog.window.destroyed
+    alert.assert_called_once()
+    dialog.show_all_files = True
+    dialog.submit()
+    assert dialog.result == profile / "note.txt"
+
+    cancelled = ui.PathDialog(FakePasswordParent(), "open", profile, profile)
+    assert cancelled.window.bindings["<Escape>"](None) == "break"
+    assert cancelled.result is None and cancelled.window.destroyed
+
+
+def test_choice_dialog_uses_theme_and_returns_selection_or_cancel(monkeypatch):
+    install_path_dialog_widgets(monkeypatch)
+    lists = []
+    monkeypatch.setattr(
+        ui.tk, "Listbox",
+        lambda *_args, **options: lists.append(FakePathListbox(**options)) or lists[-1],
+    )
+    monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
+
+    chosen = ui.ChoiceDialog(
+        FakePasswordParent(), "Coleção da nota", "Escolha:",
+        [("first", "Geral"), ("second", "Projetos")], "second",
+    )
+    assert chosen.window.geometry_value == "440x380+470+390"
+    assert lists[0].options["bg"] == ui.THEME.panel
+    assert lists[0].items == ["Geral", "Projetos"]
+    assert lists[0].selection == (1,)
+    assert chosen.window.bindings["<Return>"](None) == "break"
+    assert chosen.result == "second" and chosen.window.destroyed
+
+    cancelled = ui.ChoiceDialog(
+        FakePasswordParent(), "Coleção da nota", "Escolha:", [("first", "Geral")], "first",
+    )
+    assert cancelled.window.bindings["<Escape>"](None) == "break"
+    assert cancelled.result is None and cancelled.window.destroyed
+
+
+def test_ui_does_not_import_native_file_dialog_or_platform_ttk_widgets():
+    assert not hasattr(ui, "filedialog")
+    assert not hasattr(ui, "ttk")
 
 
 def test_unsaved_dialog_binds_save_discard_and_cancel_shortcuts(monkeypatch):
@@ -329,7 +541,7 @@ def test_create_activates_and_remembers_only_after_password_confirmation(tmp_pat
     monkeypatch.delenv("CADERNO_CONFIG_DIR", raising=False)
     target = tmp_path / "new.cpv"
     session = object()
-    monkeypatch.setattr(ui.filedialog, "asksaveasfilename", lambda **kwargs: str(target))
+    monkeypatch.setattr(ui, "ask_path", lambda *_args: target)
     answers = iter(("passphrase", "passphrase"))
     ask_password = Mock(side_effect=lambda *_args: next(answers))
     monkeypatch.setattr(ui, "ask_password", ask_password)
@@ -350,7 +562,7 @@ def test_create_activates_and_remembers_only_after_password_confirmation(tmp_pat
 
 def test_create_with_mismatched_password_does_not_create_or_remember(monkeypatch):
     app = bare_app()
-    monkeypatch.setattr(ui.filedialog, "asksaveasfilename", lambda **kwargs: "/tmp/new.cpv")
+    monkeypatch.setattr(ui, "ask_path", lambda *_args: Path("/tmp/new.cpv"))
     answers = iter(("first", "second"))
     monkeypatch.setattr(ui, "ask_password", lambda *_args: next(answers))
     create = Mock()
@@ -368,7 +580,7 @@ def test_cancelled_create_picker_does_not_prompt_or_discard_editor_draft(monkeyp
     app = bare_app()
     app.session = Mock()
     app.title_entry.value = "Rascunho que deve ficar"
-    monkeypatch.setattr(ui.filedialog, "asksaveasfilename", lambda **_kwargs: "")
+    monkeypatch.setattr(ui, "ask_path", lambda *_args: None)
     unsaved_prompt = Mock()
     monkeypatch.setattr(ui, "ask_unsaved_changes", unsaved_prompt)
 
@@ -385,7 +597,7 @@ def test_create_existing_file_does_not_prompt_or_discard_editor_draft(tmp_path, 
     target = tmp_path / "already-exists.cpv"
     target.touch()
     monkeypatch.delenv("CADERNO_UI_TEST_PROFILE", raising=False)
-    monkeypatch.setattr(ui.filedialog, "asksaveasfilename", lambda **_kwargs: str(target))
+    monkeypatch.setattr(ui, "ask_path", lambda *_args: target)
     unsaved_prompt = Mock()
     ask_password = Mock()
     monkeypatch.setattr(ui, "ask_unsaved_changes", unsaved_prompt)
@@ -797,7 +1009,6 @@ def test_note_editor_binds_save_and_cancel_shortcuts_to_all_editable_fields(monk
     for widget_name in ("Label", "Frame", "Entry", "Text", "Scrollbar"):
         monkeypatch.setattr(ui.tk, widget_name, FakeEditorWidget)
     monkeypatch.setattr(ui.tk, "StringVar", FakeStringVar)
-    monkeypatch.setattr(ui.ttk, "Combobox", FakeEditorWidget)
     monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
 
     ui.CadernoApp._render_note_editor(app, None)
@@ -827,7 +1038,6 @@ def test_note_editor_connects_vertical_scrollbar_to_text_widget(monkeypatch):
     for widget_name in ("Label", "Frame", "Entry", "Text", "Scrollbar"):
         monkeypatch.setattr(ui.tk, widget_name, create_widget)
     monkeypatch.setattr(ui.tk, "StringVar", FakeStringVar)
-    monkeypatch.setattr(ui.ttk, "Combobox", create_widget)
     monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
 
     ui.CadernoApp._render_note_editor(app, None)
@@ -910,16 +1120,14 @@ def test_restore_missing_last_vault_warns_without_trying_to_unlock(tmp_path, mon
 def test_file_dialogs_start_in_isolated_profile_when_configured(tmp_path, monkeypatch):
     app = bare_app()
     monkeypatch.setenv("CADERNO_UI_TEST_PROFILE", str(tmp_path))
-    save_dialog = Mock(return_value="")
-    open_dialog = Mock(return_value="")
-    monkeypatch.setattr(ui.filedialog, "asksaveasfilename", save_dialog)
-    monkeypatch.setattr(ui.filedialog, "askopenfilename", open_dialog)
+    path_dialog = Mock(side_effect=(None, None))
+    monkeypatch.setattr(ui, "ask_path", path_dialog)
 
     app.create()
     app.choose()
 
-    assert save_dialog.call_args.kwargs["initialdir"] == str(tmp_path)
-    assert open_dialog.call_args.kwargs["initialdir"] == str(tmp_path)
+    assert path_dialog.call_args_list[0].args[1:] == ("save", tmp_path, tmp_path)
+    assert path_dialog.call_args_list[1].args[1:] == ("open", tmp_path, tmp_path)
 
 
 def test_unlock_rejects_file_outside_isolated_test_profile(tmp_path, monkeypatch):
@@ -946,7 +1154,7 @@ def test_create_rejects_destination_outside_isolated_test_profile(tmp_path, monk
     profile.mkdir()
     monkeypatch.setenv("CADERNO_CONFIG_DIR", str(profile))
     monkeypatch.setenv("CADERNO_UI_TEST_PROFILE", str(profile))
-    monkeypatch.setattr(ui.filedialog, "asksaveasfilename", lambda **kwargs: str(tmp_path / "real-vault.cpv"))
+    monkeypatch.setattr(ui, "ask_path", lambda *_args: tmp_path / "real-vault.cpv")
     password_prompt = Mock()
     monkeypatch.setattr(ui, "ask_password", password_prompt)
     create = Mock()

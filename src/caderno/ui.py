@@ -3,7 +3,7 @@ import tkinter as tk
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from tkinter import filedialog, font, ttk
+from tkinter import font
 from typing import Literal
 from uuid import uuid4
 
@@ -61,6 +61,10 @@ class UILayout:
     alert_dialog_padding: int
     text_dialog_size: tuple
     text_dialog_padding: int
+    path_dialog_size: tuple
+    path_dialog_padding: int
+    choice_dialog_size: tuple
+    choice_dialog_padding: int
     unsaved_dialog_size: tuple
     unsaved_dialog_padding: int
     notes_list_width: int
@@ -149,12 +153,12 @@ THEME = UITheme(
     secondary_button_background="#dfe4dc", secondary_button_active_background="#cfd8cc",
     disabled_button_background="#e3e5de",
     font_body=("Arial", 12), font_text=("Georgia", 14),
-    font_fixed=("Menlo", 12), font_button=("Arial", 12, "bold"),
+    font_fixed=("Courier New", 12), font_button=("Arial", 12, "bold"),
     font_label=("Arial", 11), font_tiny=("Arial", 10),
     font_brand=("Georgia", 20, "bold"), font_brand_name=("Arial", 12, "bold"),
     font_brand_subtitle=("Georgia", 11, "italic"), font_icon=("Georgia", 22),
     font_title=("Georgia", 34), font_heading=("Georgia", 22),
-    font_summary=("Georgia", 18), font_mono_small=("Menlo", 10),
+    font_summary=("Georgia", 18), font_mono_small=("Courier New", 10),
     layout=UILayout(
         window_size=(1180, 760), minimum_window_size=(900, 620),
         sidebar_width=250, sidebar_padding_x=18, sidebar_padding_y=24,
@@ -170,6 +174,8 @@ THEME = UITheme(
         password_prompt_wrap=380,
         alert_dialog_size=(460, 220), alert_dialog_padding=24,
         text_dialog_size=(480, 260), text_dialog_padding=24,
+        path_dialog_size=(720, 520), path_dialog_padding=20,
+        choice_dialog_size=(440, 380), choice_dialog_padding=22,
         unsaved_dialog_size=(520, 220), unsaved_dialog_padding=24,
         notes_list_width=190, notes_list_gap=18,
     ),
@@ -424,6 +430,362 @@ def ask_text(parent, title: str, prompt: str) -> str | None:
     return dialog.result
 
 
+class PathDialog:
+    """Navega diretórios e seleciona um caminho sem abrir painéis do sistema."""
+
+    def __init__(self, parent, mode: Literal["open", "save"], initialdir: Path,
+                 allowed_root: Path | None = None):
+        self.mode = mode
+        self.result = None
+        self.allowed_root = self._resolved_directory(allowed_root) if allowed_root else None
+        self.directory = self._initial_directory(initialdir)
+        self.path_items = []
+        self.show_all_files = False
+        self.window = tk.Toplevel(parent)
+        self.window.withdraw()
+        self.window.title("Abrir base" if mode == "open" else "Criar base")
+        self.window.configure(bg=THEME.paper)
+        self.window.resizable(True, True)
+        self.window.transient(parent)
+        self._build_content()
+        self.window.bind("<Return>", self._submit_event)
+        self.window.bind("<Escape>", self._cancel_event)
+        self.window.protocol("WM_DELETE_WINDOW", self.cancel)
+        self._center_on_parent(parent)
+        self._refresh_items()
+        self.window.deiconify()
+        self.window.grab_set()
+        self.window.after_idle(self.name_entry.focus_set)
+
+    def _build_content(self):
+        width, height = THEME.layout.path_dialog_size
+        panel = tk.Frame(
+            self.window, bg=THEME.state_panel, padx=THEME.layout.path_dialog_padding,
+        )
+        panel.pack(fill="both", expand=True, padx=18, pady=18)
+        tk.Label(
+            panel, text=self.window.title(), bg=THEME.state_panel,
+            fg=THEME.state_title, font=THEME.font_heading,
+        ).pack(anchor="w", pady=(0, 10))
+        self._build_location_row(panel)
+        self._build_file_list(panel)
+        self._build_filename_row(panel)
+        self._build_actions(panel)
+        self.window.minsize(width, height)
+
+    def _build_location_row(self, parent):
+        row = tk.Frame(parent, bg=THEME.state_panel)
+        row.pack(fill="x", pady=(0, 10))
+        tk.Label(
+            row, text="Pasta", bg=THEME.state_panel,
+            fg=THEME.ink, font=THEME.font_label,
+        ).pack(side="left", padx=(0, 8))
+        self.location_entry = tk.Entry(
+            row, bg=THEME.panel, fg=THEME.ink, insertbackground=THEME.green,
+            font=THEME.font_body, relief="flat",
+        )
+        self.location_entry.pack(side="left", fill="x", expand=True, ipady=5)
+        self.location_entry.bind("<Return>", self._go_to_location_event)
+        make_button(row, "Ir", "secondary", pady=5, command=self._go_to_location).pack(
+            side="left", padx=(8, 0),
+        )
+        if self.mode == "open":
+            self.filter_button = make_button(
+                row, "Bases .cpv", "secondary", pady=5, command=self._toggle_file_filter,
+            )
+            self.filter_button.pack(side="left", padx=(8, 0))
+
+    def _build_file_list(self, parent):
+        area = tk.Frame(parent, bg=THEME.state_panel)
+        area.pack(fill="both", expand=True)
+        self.file_list = tk.Listbox(
+            area, bg=THEME.panel, fg=THEME.ink,
+            selectbackground=THEME.selected_navigation_background,
+            selectforeground=THEME.selected_navigation_foreground,
+            font=THEME.font_body, relief="flat",
+            highlightbackground=THEME.field_border,
+            highlightcolor=THEME.green, highlightthickness=THEME.layout.highlight_thickness,
+        )
+        scrollbar = tk.Scrollbar(area, orient="vertical", command=self.file_list.yview)
+        self.file_list.configure(yscrollcommand=scrollbar.set)
+        self.file_list.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        self.file_list.bind("<<ListboxSelect>>", self._select_item)
+        self.file_list.bind("<Double-Button-1>", self._activate_item)
+
+    def _build_filename_row(self, parent):
+        row = tk.Frame(parent, bg=THEME.state_panel)
+        row.pack(fill="x", pady=(10, 0))
+        tk.Label(
+            row, text="Nome", bg=THEME.state_panel,
+            fg=THEME.ink, font=THEME.font_label,
+        ).pack(side="left", padx=(0, 8))
+        self.name_entry = tk.Entry(
+            row, bg=THEME.panel, fg=THEME.ink, insertbackground=THEME.green,
+            font=THEME.font_body, relief="flat",
+        )
+        self.name_entry.pack(side="left", fill="x", expand=True, ipady=5)
+
+    def _build_actions(self, parent):
+        actions = tk.Frame(parent, bg=THEME.state_panel)
+        actions.pack(fill="x", pady=(12, 0))
+        make_button(actions, "Cancelar", "secondary", pady=7, command=self.cancel).pack(side="right", padx=(8, 0))
+        label = "Abrir" if self.mode == "open" else "Criar"
+        make_button(actions, label, "primary", pady=7, command=self.submit).pack(side="right")
+
+    def _refresh_items(self):
+        self.location_entry.delete(0, "end")
+        self.location_entry.insert(0, str(self.directory))
+        self.file_list.delete(0, "end")
+        try:
+            entries = list(self.directory.iterdir())
+        except OSError:
+            show_alert(self.window, "Pasta indisponível", "Não foi possível listar esta pasta.")
+            self.path_items = []
+            return
+        directories = sorted((item for item in entries if item.is_dir()), key=lambda item: item.name.casefold())
+        files = sorted((item for item in entries if item.is_file()), key=lambda item: item.name.casefold())
+        if self.mode == "open" and not self.show_all_files:
+            files = [item for item in files if item.suffix.casefold() == ".cpv"]
+        self.path_items = directories + files
+        for item in self.path_items:
+            label = f"[Pasta] {item.name}" if item.is_dir() else item.name
+            self.file_list.insert("end", label)
+
+    def _selected_path(self):
+        selection = self.file_list.curselection()
+        if not selection:
+            return None
+        index = selection[0]
+        return self.path_items[index] if index < len(self.path_items) else None
+
+    def _select_item(self, _event=None):
+        selected = self._selected_path()
+        if selected is not None and selected.is_file():
+            self._set_name(selected.name)
+
+    def _activate_item(self, _event=None):
+        selected = self._selected_path()
+        if selected is None:
+            return "break"
+        if selected.is_dir():
+            self._navigate(selected)
+        elif self.mode == "open":
+            self._set_name(selected.name)
+            self.submit()
+        return "break"
+
+    def _set_name(self, name: str):
+        self.name_entry.delete(0, "end")
+        self.name_entry.insert(0, name)
+
+    def _navigate(self, path: Path):
+        try:
+            target = path.expanduser().resolve(strict=True)
+            if not target.is_dir() or not self._is_allowed(target):
+                raise ValueError
+        except (OSError, RuntimeError, ValueError):
+            show_alert(self.window, "Pasta indisponível", "Escolha uma pasta acessível dentro do perfil atual.")
+            return False
+        self.directory = target
+        self._refresh_items()
+        return True
+
+    def _go_to_location(self):
+        return self._navigate(Path(self.location_entry.get().strip()))
+
+    def _go_to_location_event(self, _event=None):
+        self._go_to_location()
+        return "break"
+
+    def _toggle_file_filter(self):
+        self.show_all_files = not self.show_all_files
+        label = "Todos os arquivos" if self.show_all_files else "Bases .cpv"
+        self.filter_button.configure(text=label)
+        self._refresh_items()
+
+    def _candidate_path(self):
+        name = self.name_entry.get().strip()
+        if not name:
+            show_alert(self.window, "Nome necessário", "Selecione um arquivo ou informe um nome.")
+            return None
+        candidate = Path(name).expanduser()
+        if self.mode == "save" and candidate.name != name:
+            show_alert(self.window, "Nome inválido", "Informe apenas o nome do arquivo nesta pasta.")
+            return None
+        if not candidate.is_absolute():
+            candidate = self.directory / candidate
+        try:
+            resolved = candidate.resolve(strict=self.mode == "open")
+            if not self._is_allowed(resolved):
+                raise ValueError
+            if self.mode == "open":
+                if not resolved.is_file():
+                    raise ValueError
+                if not self.show_all_files and resolved.suffix.casefold() != ".cpv":
+                    raise ValueError
+            else:
+                if resolved.parent != self.directory or not resolved.parent.is_dir():
+                    raise ValueError
+                if not resolved.suffix:
+                    resolved = resolved.with_suffix(".cpv")
+        except (OSError, RuntimeError, ValueError):
+            show_alert(self.window, "Caminho inválido", "Escolha um arquivo permitido nesta pasta.")
+            return None
+        return resolved
+
+    def _is_allowed(self, path: Path) -> bool:
+        if self.allowed_root is None:
+            return True
+        return path == self.allowed_root or self.allowed_root in path.parents
+
+    def submit(self):
+        self.result = self._candidate_path()
+        if self.result is not None:
+            self.window.destroy()
+
+    def _submit_event(self, _event=None):
+        self.submit()
+        return "break"
+
+    def _cancel_event(self, _event=None):
+        self.cancel()
+        return "break"
+
+    def cancel(self):
+        self.window.destroy()
+
+    def _center_on_parent(self, parent):
+        self.window.update_idletasks()
+        width, height = THEME.layout.path_dialog_size
+        x = parent.winfo_rootx() + max((parent.winfo_width() - width) // 2, 0)
+        y = parent.winfo_rooty() + max((parent.winfo_height() - height) // 2, 0)
+        self.window.geometry(f"{width}x{height}+{x}+{y}")
+
+    @staticmethod
+    def _initial_directory(initialdir: Path) -> Path:
+        try:
+            candidate = Path(initialdir).expanduser().resolve(strict=True)
+            return candidate if candidate.is_dir() else Path.home().resolve()
+        except (OSError, RuntimeError):
+            return Path.home().resolve()
+
+    @staticmethod
+    def _resolved_directory(directory: Path) -> Path:
+        return Path(directory).expanduser().resolve(strict=True)
+
+
+def ask_path(parent, mode: Literal["open", "save"], initialdir: Path,
+             allowed_root: Path | None = None) -> Path | None:
+    """Mostra navegador de caminhos do app e retorna Path ou None ao cancelar."""
+    dialog = PathDialog(parent, mode, initialdir, allowed_root)
+    parent.wait_window(dialog.window)
+    return dialog.result
+
+
+class ChoiceDialog:
+    """Oferece opções em uma lista modal que segue o tema do aplicativo."""
+
+    def __init__(self, parent, title: str, prompt: str, options: list[tuple[str, str]], selected_id):
+        self.result = None
+        self.options = list(options)
+        self.window = tk.Toplevel(parent)
+        self.window.withdraw()
+        self.window.title(title)
+        self.window.configure(bg=THEME.paper)
+        self.window.resizable(True, True)
+        self.window.transient(parent)
+        self._build_content(prompt, selected_id)
+        self.window.bind("<Return>", self._choose_event)
+        self.window.bind("<Escape>", self._cancel_event)
+        self.window.protocol("WM_DELETE_WINDOW", self.cancel)
+        self._center_on_parent(parent)
+        self.window.deiconify()
+        self.window.grab_set()
+        self.window.after_idle(self.option_list.focus_set)
+
+    def _build_content(self, prompt: str, selected_id):
+        panel = tk.Frame(
+            self.window, bg=THEME.state_panel, padx=THEME.layout.choice_dialog_padding,
+        )
+        panel.pack(fill="both", expand=True, padx=18, pady=18)
+        tk.Label(
+            panel, text=self.window.title(), bg=THEME.state_panel,
+            fg=THEME.state_title, font=THEME.font_heading,
+        ).pack(anchor="w", pady=(0, 8))
+        tk.Label(
+            panel, text=prompt, bg=THEME.state_panel, fg=THEME.muted,
+            font=THEME.font_body, wraplength=360, justify="left",
+        ).pack(anchor="w", pady=(0, 12))
+        self._build_option_list(panel, selected_id)
+        self._build_actions(panel)
+
+    def _build_option_list(self, parent, selected_id):
+        area = tk.Frame(parent, bg=THEME.state_panel)
+        area.pack(fill="both", expand=True)
+        self.option_list = tk.Listbox(
+            area, bg=THEME.panel, fg=THEME.ink,
+            selectbackground=THEME.selected_navigation_background,
+            selectforeground=THEME.selected_navigation_foreground,
+            font=THEME.font_body, relief="flat",
+            highlightbackground=THEME.field_border,
+            highlightcolor=THEME.green, highlightthickness=THEME.layout.highlight_thickness,
+        )
+        scrollbar = tk.Scrollbar(area, orient="vertical", command=self.option_list.yview)
+        self.option_list.configure(yscrollcommand=scrollbar.set)
+        self.option_list.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        self.selected_index = 0
+        for index, (identifier, label) in enumerate(self.options):
+            self.option_list.insert("end", label)
+            if identifier == selected_id:
+                self.selected_index = index
+        if self.options:
+            self.option_list.selection_set(self.selected_index)
+            self.option_list.see(self.selected_index)
+        self.option_list.bind("<Double-Button-1>", self._choose_event)
+
+    def _build_actions(self, parent):
+        actions = tk.Frame(parent, bg=THEME.state_panel)
+        actions.pack(fill="x", pady=(12, 0))
+        make_button(actions, "Cancelar", "secondary", pady=7, command=self.cancel).pack(
+            side="right", padx=(8, 0),
+        )
+        make_button(actions, "Escolher", "primary", pady=7, command=self.choose).pack(side="right")
+
+    def _center_on_parent(self, parent):
+        self.window.update_idletasks()
+        width, height = THEME.layout.choice_dialog_size
+        self.window.geometry(f"{width}x{height}")
+        x = parent.winfo_rootx() + max((parent.winfo_width() - width) // 2, 0)
+        y = parent.winfo_rooty() + max((parent.winfo_height() - height) // 2, 0)
+        self.window.geometry(f"{width}x{height}+{x}+{y}")
+
+    def choose(self):
+        selection = self.option_list.curselection()
+        if selection and selection[0] < len(self.options):
+            self.result = self.options[selection[0]][0]
+            self.window.destroy()
+
+    def _choose_event(self, _event=None):
+        self.choose()
+        return "break"
+
+    def _cancel_event(self, _event=None):
+        self.cancel()
+        return "break"
+
+    def cancel(self):
+        self.window.destroy()
+
+
+def ask_choice(parent, title: str, prompt: str, options: list[tuple[str, str]], selected_id):
+    """Mostra seletor modal próprio e retorna o identificador ou None ao cancelar."""
+    dialog = ChoiceDialog(parent, title, prompt, options, selected_id)
+    parent.wait_window(dialog.window)
+    return dialog.result
+
+
 class UnsavedChangesDialog:
     """Pede uma decisão explícita antes de descartar um rascunho alterado."""
 
@@ -532,23 +894,19 @@ class CadernoApp:
 
     def create(self):
         """Pede destino e senha, cria cofre vazio e só então lembra o caminho."""
-        options = dict(
-            parent=self.root, title="Criar base", defaultextension=".cpv",
-            filetypes=[("Base criptografada", "*.cpv")],
-        )
-        if os.environ.get("CADERNO_UI_TEST_PROFILE"):
-            options["initialdir"] = os.environ["CADERNO_UI_TEST_PROFILE"]
-        target = filedialog.asksaveasfilename(**options)
-        if not target:
+        profile = os.environ.get("CADERNO_UI_TEST_PROFILE")
+        initialdir = Path(profile) if profile else Path.home()
+        target = ask_path(self.root, "save", initialdir, Path(profile) if profile else None)
+        if target is None:
             return
-        if not self._path_allowed_in_test_profile(Path(target)):
+        if not self._path_allowed_in_test_profile(target):
             show_alert(
                 self.root,
                 "Arquivo fora da pasta de teste",
                 "No perfil de teste, crie a base dentro da pasta de teste indicada no Terminal.",
             )
             return
-        if Path(target).exists():
+        if target.exists():
             show_alert(self.root, "Não foi possível criar", "Já existe um arquivo nesse local.")
             return
         password = ask_password(self.root, "Criar base", "Escolha uma senha para esta base.", "Continuar")
@@ -571,7 +929,7 @@ class CadernoApp:
             "entries": [],
         }
         try:
-            session = create_vault(Path(target), password, VaultSnapshot(document))
+            session = create_vault(target, password, VaultSnapshot(document))
         except FileExistsError:
             show_alert(self.root, "Não foi possível criar", "Já existe um arquivo nesse local.")
             return
@@ -587,19 +945,15 @@ class CadernoApp:
             show_alert(self.root, "Não foi possível criar", "Verifique o local escolhido e tente novamente.")
             return
         self._activate(session)
-        self._remember_path(Path(target))
+        self._remember_path(target)
 
     def choose(self):
         """Seleciona um arquivo de cofre e solicita a senha sem persistí-la."""
-        options = dict(
-            parent=self.root, title="Abrir base",
-            filetypes=[("Base criptografada", "*.cpv"), ("Todos os arquivos", "*")],
-        )
-        if os.environ.get("CADERNO_UI_TEST_PROFILE"):
-            options["initialdir"] = os.environ["CADERNO_UI_TEST_PROFILE"]
-        target = filedialog.askopenfilename(**options)
-        if target:
-            self.unlock(Path(target))
+        profile = os.environ.get("CADERNO_UI_TEST_PROFILE")
+        initialdir = Path(profile) if profile else Path.home()
+        target = ask_path(self.root, "open", initialdir, Path(profile) if profile else None)
+        if target is not None:
+            self.unlock(target)
 
     def unlock(self, path: Path):
         """Abre um cofre; mensagens de falha não revelam detalhes internos do arquivo."""
@@ -812,6 +1166,19 @@ class CadernoApp:
                 collection_id = collections[0]["id"]
         return collection_id, tags
 
+    def choose_collection(self):
+        """Atualiza a coleção do rascunho sem persistir antes do salvamento da nota."""
+        selected_id = self.collection_id_by_label.get(self.collection_choice.get())
+        collection_id = ask_choice(
+            self.root, "Coleção da nota", "Escolha uma coleção para esta nota.",
+            self.collection_options, selected_id,
+        )
+        if collection_id is None:
+            return
+        label = next(label for label, identifier in self.collection_options if identifier == collection_id)
+        self.collection_choice.set(label)
+        self.collection_selector.configure(text=label)
+
     def _render_note_list(self, parent):
         listbox = tk.Listbox(
             parent, bg=THEME.panel, fg=THEME.ink, selectbackground=THEME.selected_navigation_background,
@@ -877,6 +1244,7 @@ class CadernoApp:
 
     def _render_metadata_fields(self):
         options = self.collection_options
+        selected_label = self.collection_choice.get()
         metadata = tk.Frame(self.editor_panel, bg=THEME.state_panel)
         metadata.pack(fill="x", pady=(0, 8))
         collection_column = tk.Frame(metadata, bg=THEME.state_panel)
@@ -887,9 +1255,9 @@ class CadernoApp:
             collection_column, text="Coleção", bg=THEME.state_panel,
             fg=THEME.ink, font=THEME.font_label,
         ).pack(anchor="w", pady=(0, 4))
-        self.collection_selector = ttk.Combobox(
-            collection_column, textvariable=self.collection_choice,
-            values=[label for label, _ident in options], state="readonly", width=14,
+        self.collection_selector = make_button(
+            collection_column, selected_label, "secondary", pady=5,
+            command=self.choose_collection,
         )
         self.collection_selector.pack(fill="x")
         tk.Label(
