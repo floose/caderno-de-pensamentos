@@ -96,6 +96,9 @@ class FakeEditorWidget:
     def pack(self, **options):
         self.pack_options.append(options)
 
+    def pack_configure(self, **options):
+        self.pack_configure_options = options
+
     def bind(self, event, callback):
         self.bindings[event] = callback
 
@@ -1164,15 +1167,40 @@ def test_collection_editor_labels_avoid_generated_and_literal_suffix_collisions(
     ]}
 
     options = ui.CadernoApp._collection_options(document)
-    identifiers_by_label = dict(options)
+    labels_by_identifier = dict(options)
 
-    assert len({label for label, _ident in options}) == len(options)
-    assert {ident for _label, ident in options} == {
+    assert len({identifier for identifier, _label in options}) == len(options)
+    assert {identifier for identifier, _label in options} == {
         "collection-one", "collection-two", "collection-literal", "collection-nested",
     }
-    assert identifiers_by_label["Ideias · 1"] == "collection-one"
-    assert identifiers_by_label["Ideias · 1 (2)"] == "collection-literal"
-    assert identifiers_by_label["Ideias · 1 (2) (2)"] == "collection-nested"
+    assert labels_by_identifier["collection-one"] == "Ideias · 1"
+    assert labels_by_identifier["collection-literal"] == "Ideias · 1 (2)"
+    assert labels_by_identifier["collection-nested"] == "Ideias · 1 (2) (2)"
+
+
+def test_collection_options_follow_choice_dialog_id_label_contract(monkeypatch):
+    install_path_dialog_widgets(monkeypatch)
+    lists = []
+    monkeypatch.setattr(
+        ui.tk, "Listbox",
+        lambda *_args, **options: lists.append(FakePathListbox(**options)) or lists[-1],
+    )
+    monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
+    options = ui.CadernoApp._collection_options({"collections": [
+        {"id": "default", "name": "Geral"},
+        {"id": "collection-ideas", "name": "Ideias"},
+    ]})
+
+    dialog = ui.ChoiceDialog(
+        FakePasswordParent(), "Coleção da nota", "Escolha:", options,
+        "collection-ideas",
+    )
+
+    assert options == [("default", "Geral"), ("collection-ideas", "Ideias")]
+    assert lists[0].items == ["Geral", "Ideias"]
+    assert lists[0].selection == (1,)
+    assert dialog.window.bindings["<Return>"](None) == "break"
+    assert dialog.result == "collection-ideas"
 
 
 def test_note_editor_binds_save_and_cancel_shortcuts_to_all_editable_fields(monkeypatch):
@@ -1215,7 +1243,10 @@ def test_note_editor_binds_save_and_cancel_shortcuts_to_all_editable_fields(monk
         app.title_entry, app.tags_entry, app.collection_selector,
         app.favorite_button, app.body_editor,
     ):
-        assert set(field.bindings) == {"<Command-s>", "<Escape>"}
+        expected_bindings = {"<Command-s>", "<Escape>"}
+        if field is app.body_editor:
+            expected_bindings.add("<KP_Enter>")
+        assert set(field.bindings) == expected_bindings
         field.bindings["<Command-s>"](None)
         field.bindings["<Escape>"](None)
     assert app.save_entry.call_count == 5
@@ -1356,6 +1387,9 @@ def test_note_editor_connects_vertical_scrollbar_to_text_widget(monkeypatch):
     assert scrollbar.options["command"] == app.body_editor.yview
     assert scrollbar.pack_options == [{"side": "right", "fill": "y"}]
     assert app.body_editor.configure_options["yscrollcommand"] == scrollbar.set
+    keypad_binding = app.body_editor.bindings["<KP_Enter>"]
+    assert keypad_binding.__self__ is app
+    assert keypad_binding.__func__ is ui.CadernoApp._insert_note_newline
 
 
 def test_main_window_applies_minimum_size_from_shared_layout(monkeypatch):
@@ -1430,6 +1464,39 @@ def test_new_note_and_focus_shortcut_handlers_consume_the_key_event():
     app.session = None
     assert app._toggle_note_focus_shortcut() == "break"
     app.toggle_note_focus.assert_called_once_with()
+
+
+def test_expanded_editor_layout_applies_and_removes_margins_and_background():
+    app = bare_app()
+    app.body_frame = FakeEditorWidget()
+    app.editor_panel = FakeEditorWidget()
+    app.body_editor = FakeEditorWidget()
+
+    ui.CadernoApp._configure_focus_editor_layout(app, True)
+
+    assert app.body_frame.pack_configure_options == {
+        "padx": ui.THEME.layout.focus_editor_horizontal_margin,
+    }
+    assert app.editor_panel.configure_options == {"bg": ui.THEME.panel}
+    assert app.body_editor.configure_options == {"highlightthickness": 0}
+
+    ui.CadernoApp._configure_focus_editor_layout(app, False)
+
+    assert app.body_frame.pack_configure_options == {"padx": 0}
+    assert app.editor_panel.configure_options == {"bg": ui.THEME.state_panel}
+    assert app.body_editor.configure_options == {
+        "highlightthickness": ui.THEME.layout.highlight_thickness,
+    }
+
+
+def test_numeric_keypad_enter_inserts_newline_and_stops_default_binding():
+    app = bare_app()
+    app.body_editor = FakeTextField()
+
+    result = ui.CadernoApp._insert_note_newline(app)
+
+    assert app.body_editor.value == "\n"
+    assert result == "break"
 
 
 def test_locked_and_unlocked_views_choose_the_shared_button_variants():

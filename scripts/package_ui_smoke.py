@@ -61,6 +61,8 @@ def _save_synthetic_note(app) -> None:
 
 def _exercise_note_focus(app) -> None:
     assert app.focus_button.cget("text") == "Expandir escrita  ⌃⌘E"
+    assert app.body_frame.pack_info()["padx"] == 0
+    _exercise_numeric_keypad_enter(app)
     ask_text = ui.ask_text
     try:
         ui.ask_text = lambda *_args: "Projetos"
@@ -76,11 +78,17 @@ def _exercise_note_focus(app) -> None:
     app.body_editor.insert("end", " Texto escrito no modo expandido.")
     assert app._toggle_note_focus_shortcut() == "break"
     assert app.focus_mode and app.sidebar.winfo_manager() == ""
+    assert app.body_frame.pack_info()["padx"] == ui.THEME.layout.focus_editor_horizontal_margin
+    assert app.editor_panel.cget("bg") == ui.THEME.panel
+    assert app.body_editor.cget("highlightthickness") == 0
     assert app.focus_button.cget("text") == "Voltar ao caderno  ⌃⌘E"
     assert app.note_list_panel.winfo_manager() == ""
     assert app.body_editor.get("1.0", "end-1c").endswith("modo expandido.")
     assert app._exit_focus_shortcut() == "break"
     assert not app.focus_mode and app.sidebar.winfo_manager() == "pack"
+    assert app.body_frame.pack_info()["padx"] == 0
+    assert app.editor_panel.cget("bg") == ui.THEME.state_panel
+    assert app.body_editor.cget("highlightthickness") == ui.THEME.layout.highlight_thickness
     assert app.focus_button.cget("text") == "Expandir escrita  ⌃⌘E"
     assert app.body_editor.get("1.0", "end-1c").endswith("modo expandido.")
     assert app.collection_choice.get() == "Projetos"
@@ -88,6 +96,7 @@ def _exercise_note_focus(app) -> None:
     assert not app.favorite_choice and app._has_pending_changes()
 
     assert app._toggle_note_focus_shortcut() == "break"
+    assert app.body_frame.pack_info()["padx"] == ui.THEME.layout.focus_editor_horizontal_margin
     assert app.save_entry()
     assert app.focus_mode and app.sidebar.winfo_manager() == ""
     entry = app._active_entry()
@@ -98,6 +107,24 @@ def _exercise_note_focus(app) -> None:
     app.select_entry(entry["id"])
     assert entry["tags"] == ["modo-foco"] and not entry["favorite"]
     app.exit_note_focus()
+
+
+def _exercise_numeric_keypad_enter(app) -> None:
+    """Gera KP_Enter no editor mapeado e confirma a quebra de linha."""
+    restore_binding = getattr(app, "_restore_binding", None)
+    if restore_binding:
+        app.root.unbind("<Map>", restore_binding)
+        app._restore_binding = None
+    app.root.deiconify()
+    try:
+        app.root.update()
+        app.body_editor.focus_force()
+        app.body_editor.mark_set("insert", "end-1c")
+        app.body_editor.event_generate("<KP_Enter>", when="now")
+        app.root.update()
+        assert app.body_editor.get("1.0", "end-1c").endswith("\n")
+    finally:
+        app.root.withdraw()
 
 
 def _exercise_focus_close(app) -> None:
@@ -197,7 +224,7 @@ def _close_and_reopen_vault(app, vault_path: Path) -> None:
     assert app.close_vault()
     persisted = open_vault(vault_path, "synthetic-package-ui-password")
     assert persisted.snapshot.document["entries"][0]["body_markdown"] == (
-        "Conteúdo sintético do smoke test. Texto escrito no modo expandido."
+        "Conteúdo sintético do smoke test.\n Texto escrito no modo expandido."
     )
     assert persisted.snapshot.document["entries"][0]["tags"] == ["modo-foco"]
     persisted.close()

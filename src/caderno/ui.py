@@ -89,6 +89,7 @@ class UILayout:
     unsaved_dialog_padding: int
     notes_list_width: int
     notes_list_gap: int
+    focus_editor_horizontal_margin: int
 
 
 @dataclass(frozen=True)
@@ -199,6 +200,7 @@ THEME = UITheme(
         filter_dialog_size=(560, 560), filter_dialog_padding=22,
         unsaved_dialog_size=(520, 220), unsaved_dialog_padding=24,
         notes_list_width=190, notes_list_gap=18,
+        focus_editor_horizontal_margin=48,
     ),
 )
 
@@ -1508,7 +1510,10 @@ class CadernoApp:
         )
         if collection_id is None:
             return
-        label = next(label for label, identifier in self.collection_options if identifier == collection_id)
+        label = next(
+            label for identifier, label in self.collection_options
+            if identifier == collection_id
+        )
         self.collection_choice.set(label)
         self.collection_selector.configure(text=label)
 
@@ -1540,13 +1545,15 @@ class CadernoApp:
     def _initialize_editor_metadata(self, entry):
         document = self.session.snapshot.document
         self.collection_options = self._collection_options(document)
-        self.collection_id_by_label = dict(self.collection_options)
+        self.collection_id_by_label = {
+            label: identifier for identifier, label in self.collection_options
+        }
         collection_id = entry["collection_id"] if entry else getattr(
             self, "new_entry_collection_id", None,
-        ) or self.collection_options[0][1]
+        ) or self.collection_options[0][0]
         selected_label = next(
-            (label for label, ident in self.collection_options if ident == collection_id),
-            self.collection_options[0][0],
+            (label for ident, label in self.collection_options if ident == collection_id),
+            self.collection_options[0][1],
         )
         self.collection_choice = tk.StringVar(self.editor_panel, value=selected_label)
         self.saved_collection_id = collection_id
@@ -1656,6 +1663,7 @@ class CadernoApp:
         body_scrollbar.pack(side="right", fill="y")
         self.body_editor.configure(yscrollcommand=body_scrollbar.set)
         self.body_editor.insert("1.0", body)
+        self.body_editor.bind("<KP_Enter>", self._insert_note_newline)
         for widget in (
             self.title_entry, self.tags_entry, self.collection_selector,
             self.favorite_button, self.body_editor,
@@ -1718,6 +1726,7 @@ class CadernoApp:
             self._hide_packed_widget(widget, self._focus_restore_anchor(widget))
         self.content_panel.configure(padx=0, pady=0)
         self.state_area.configure(padx=0, pady=0)
+        self._configure_focus_editor_layout(True)
         self.body_editor.bind("<Escape>", self._exit_focus_shortcut)
         self._focus_escape_binding = self.root.bind(
             "<Escape>", self._exit_focus_shortcut, add="+",
@@ -1766,12 +1775,27 @@ class CadernoApp:
             padx=THEME.layout.state_horizontal_padding,
             pady=THEME.layout.state_vertical_padding,
         )
+        self._configure_focus_editor_layout(False)
         self.body_editor.bind("<Escape>", self._cancel_edit_shortcut)
         binding = getattr(self, "_focus_escape_binding", None)
         if binding:
             self.root.unbind("<Escape>", binding)
         self.focus_mode = False
         self.focus_button.configure(text=f"Expandir escrita  {NOTE_FOCUS_SHORTCUT_LABEL}")
+
+    def _configure_focus_editor_layout(self, expanded):
+        """Define margens e fundo do editor conforme o modo expandido."""
+        margin = THEME.layout.focus_editor_horizontal_margin if expanded else 0
+        self.body_frame.pack_configure(padx=margin)
+        background = THEME.panel if expanded else THEME.state_panel
+        self.editor_panel.configure(bg=background)
+        border = 0 if expanded else THEME.layout.highlight_thickness
+        self.body_editor.configure(highlightthickness=border)
+
+    def _insert_note_newline(self, _event=None):
+        """Insere uma quebra de linha ao receber Enter do teclado numérico."""
+        self.body_editor.insert("insert", "\n")
+        return "break"
 
     def _exit_focus_shortcut(self, _event=None):
         self.exit_note_focus()
@@ -1782,7 +1806,7 @@ class CadernoApp:
         """Monta opções selecionáveis com rótulos únicos para cada coleção."""
         collections = document["collections"]
         if not collections:
-            return [("Geral", None)]
+            return [(None, "Geral")]
         counts = {}
         for item in collections:
             counts[item["name"]] = counts.get(item["name"], 0) + 1
@@ -1800,7 +1824,7 @@ class CadernoApp:
                 label = f"{base_label} ({suffix})"
                 suffix += 1
             used_labels.add(label)
-            options.append((label, item["id"]))
+            options.append((item["id"], label))
         return options
 
     def _select_list_entry(self, _event=None):

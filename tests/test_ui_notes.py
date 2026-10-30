@@ -232,8 +232,10 @@ def test_collection_choice_updates_draft_label_without_saving(tmp_path, monkeypa
         "attachments": [], "entries": [],
     }))
     app = app_with_editor(session)
-    app.collection_options = [("Geral", "collection-general"), ("Projetos", "collection-projects")]
-    app.collection_id_by_label = dict(app.collection_options)
+    app.collection_options = [("collection-general", "Geral"), ("collection-projects", "Projetos")]
+    app.collection_id_by_label = {
+        label: identifier for identifier, label in app.collection_options
+    }
     app.collection_choice = FakeEntry("Geral")
     app.collection_choice.set = lambda value: setattr(app.collection_choice, "value", value)
     app.collection_selector = Mock()
@@ -248,6 +250,7 @@ def test_collection_choice_updates_draft_label_without_saving(tmp_path, monkeypa
         app.root, "Coleção da nota", "Escolha uma coleção para esta nota.",
         app.collection_options, "collection-general",
     )
+    assert ui.CadernoApp._editor_metadata(app) == ("collection-projects", [])
     assert session.snapshot.document["entries"] == []
     session.close()
 
