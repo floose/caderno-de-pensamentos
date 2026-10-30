@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from caderno import ui
@@ -21,6 +22,54 @@ class FakeEntry:
 
 class FakeBody(FakeEntry):
     pass
+
+
+class FakeNoteList:
+    def __init__(self):
+        self.items = []
+        self.selection = ()
+
+    def delete(self, *_args):
+        self.items.clear()
+        self.selection = ()
+
+    def insert(self, _index, value):
+        self.items.append(value)
+
+    def selection_set(self, index):
+        self.selection = (index,)
+
+    def see(self, *_args):
+        pass
+
+    def curselection(self):
+        return self.selection
+
+
+def search_app():
+    app = ui.CadernoApp.__new__(ui.CadernoApp)
+    app.session = SimpleNamespace(snapshot=SimpleNamespace(document={
+        "collections": [{"id": "collection-ideas", "name": "Ideias"}],
+        "entries": [
+            {
+                "id": "entry-art", "title": "Aquarela", "body_markdown": "Planejar canal",
+                "collection_id": "collection-ideas", "tags": ["desenho", "tela"],
+                "updated_at": "2026-10-30T10:00:00Z",
+            },
+            {
+                "id": "entry-archive", "title": "Arquivo antigo", "body_markdown": "Lembranças",
+                "collection_id": "collection-ideas", "tags": ["memória"],
+                "updated_at": "2026-10-29T10:00:00Z",
+            },
+        ],
+    }))
+    app.search_query = ""
+    app.active_entry_id = "entry-art"
+    app.note_entry_ids = []
+    app.note_list = FakeNoteList()
+    app.title_entry = FakeEntry("rascunho não salvo")
+    app.body_editor = FakeBody("corpo em edição")
+    return app
 
 
 def app_with_editor(session):
@@ -188,6 +237,41 @@ def test_collection_choice_updates_draft_label_without_saving(tmp_path, monkeypa
     )
     assert session.snapshot.document["entries"] == []
     session.close()
+
+
+def test_search_matches_all_words_across_content_and_tags_case_insensitively():
+    app = search_app()
+    app.set_search_query("DESENHO planejar")
+
+    assert [entry["id"] for entry in app._matching_entries()] == ["entry-art"]
+
+    app.set_search_query("IDEIAS")
+    assert {entry["id"] for entry in app._matching_entries()} == {"entry-art", "entry-archive"}
+    app.set_search_query("AQUARELA")
+    assert [entry["id"] for entry in app._matching_entries()] == ["entry-art"]
+
+
+def test_search_updates_only_note_list_and_keeps_current_draft():
+    app = search_app()
+    app.set_search_query("desenho")
+
+    assert app.note_entry_ids == ["entry-art"]
+    assert app.note_list.items == ["Aquarela"]
+    assert app.note_list.selection == (0,)
+    assert app.title_entry.value == "rascunho não salvo"
+    assert app.body_editor.value == "corpo em edição"
+
+
+def test_search_empty_result_shows_empty_state_and_ignores_selection():
+    app = search_app()
+    app.select_entry = Mock()
+    app.set_search_query("sem correspondência")
+
+    assert app.note_entry_ids == []
+    assert app.note_list.items == ["Nenhuma nota encontrada"]
+    app.note_list.selection_set(0)
+    ui.CadernoApp._select_list_entry(app)
+    app.select_entry.assert_not_called()
 
 
 def test_add_collection_persists_real_vault_and_rejects_duplicate_name(tmp_path, monkeypatch):

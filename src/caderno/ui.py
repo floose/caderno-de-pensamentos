@@ -1028,6 +1028,7 @@ class CadernoApp:
         self.collection_add_button.configure(state="disabled")
         self.welcome_area.pack(fill="x", before=self.summary_area)
         self.search_area.pack(fill="x", before=self.state_area)
+        self._reset_search_for_locked_view()
         self.close_button.pack_forget()
         self.update_summary(None)
         self.render_state(
@@ -1044,7 +1045,10 @@ class CadernoApp:
         self.new_entry_button.configure(state="normal")
         self.collection_add_button.configure(state="normal")
         self.welcome_area.pack_forget()
-        self.search_area.pack_forget()
+        self.search_area.pack(fill="x", before=self.state_area)
+        search_entry = getattr(self, "search_entry", None)
+        if search_entry is not None:
+            search_entry.configure(state="normal")
         self.close_button.pack(fill="x", padx=8, pady=(8, 0))
         self.update_summary(session.snapshot.document)
         self._render_collection_list()
@@ -1073,6 +1077,81 @@ class CadernoApp:
         self.editor_panel.pack(side="left", fill="both", expand=True)
         entry = self._active_entry()
         self._render_note_editor(entry)
+
+    def _reset_search_for_locked_view(self):
+        """Limpa a busca ao fechar a base e desativa o campo bloqueado."""
+        self.search_query = ""
+        search_entry = getattr(self, "search_entry", None)
+        if search_entry is None:
+            return
+        search_entry.configure(state="normal")
+        search_entry.delete(0, "end")
+        search_entry.insert(0, self.search_placeholder)
+        search_entry.configure(fg=THEME.muted, state="disabled")
+        self.search_placeholder_visible = True
+
+    def _search_focus_in(self, _event=None):
+        if not getattr(self, "search_placeholder_visible", False):
+            return
+        self.search_entry.delete(0, "end")
+        self.search_entry.configure(fg=THEME.ink)
+        self.search_placeholder_visible = False
+
+    def _search_focus_out(self, _event=None):
+        if self.search_entry.get().strip():
+            return
+        self.search_entry.delete(0, "end")
+        self.search_entry.insert(0, self.search_placeholder)
+        self.search_entry.configure(fg=THEME.muted)
+        self.search_placeholder_visible = True
+        self.set_search_query("")
+
+    def _search_key_release(self, _event=None):
+        if not self.search_placeholder_visible:
+            self.set_search_query(self.search_entry.get())
+
+    def _search_escape(self, _event=None):
+        self.search_entry.delete(0, "end")
+        self.set_search_query("")
+        return "break"
+
+    def set_search_query(self, query: str):
+        """Atualiza o filtro em memória sem recriar o editor nem seus rascunhos."""
+        self.search_query = query.strip().casefold()
+        if getattr(self, "session", None) is not None and hasattr(self, "note_list"):
+            self._populate_note_list()
+
+    def _matching_entries(self):
+        document = self.session.snapshot.document
+        collections = {item["id"]: item["name"] for item in document["collections"]}
+        entries = sorted(document["entries"], key=lambda item: item["updated_at"], reverse=True)
+        return [
+            entry for entry in entries
+            if self._entry_matches_query(entry, collections, self.search_query)
+        ]
+
+    @staticmethod
+    def _entry_matches_query(entry, collections, query: str) -> bool:
+        if not query:
+            return True
+        collection = collections.get(entry["collection_id"], "")
+        searchable = " ".join((
+            entry["title"], entry["body_markdown"], collection, *entry["tags"],
+        )).casefold()
+        return all(term in searchable for term in query.split())
+
+    def _populate_note_list(self):
+        entries = self._matching_entries()
+        self.note_list.delete(0, "end")
+        self.note_entry_ids = [entry["id"] for entry in entries]
+        for entry in entries:
+            self.note_list.insert("end", entry["title"])
+        if not entries and self.search_query:
+            self.note_list.insert("end", "Nenhuma nota encontrada")
+        if self.active_entry_id in self.note_entry_ids:
+            index = self.note_entry_ids.index(self.active_entry_id)
+            self.note_list.selection_set(index)
+            self.note_list.see(index)
 
     def _active_entry(self):
         if self.session is None or self.active_entry_id is None:
@@ -1190,20 +1269,9 @@ class CadernoApp:
         listbox.configure(yscrollcommand=scrollbar.set)
         listbox.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
-        entries = sorted(
-            self.session.snapshot.document["entries"],
-            key=lambda entry: entry["updated_at"], reverse=True,
-        )
-        self.note_entry_ids = []
-        for entry in entries:
-            listbox.insert("end", entry["title"])
-            self.note_entry_ids.append(entry["id"])
-        if self.active_entry_id in self.note_entry_ids:
-            index = self.note_entry_ids.index(self.active_entry_id)
-            listbox.selection_set(index)
-            listbox.see(index)
         listbox.bind("<<ListboxSelect>>", self._select_list_entry)
         self.note_list = listbox
+        self._populate_note_list()
 
     def _render_note_editor(self, entry):
         title = entry["title"] if entry else ""
@@ -1336,7 +1404,7 @@ class CadernoApp:
 
     def _select_list_entry(self, _event=None):
         selection = self.note_list.curselection()
-        if selection:
+        if selection and selection[0] < len(self.note_entry_ids):
             self.select_entry(self.note_entry_ids[selection[0]])
 
     def _save_shortcut(self, _event=None):
@@ -1718,7 +1786,7 @@ def build_library(parent: tk.Widget, app: CadernoApp) -> None:
     build_summary(app.summary_area, app)
     app.search_area = tk.Frame(content, bg=THEME.paper)
     app.search_area.pack(fill="x")
-    build_search(app.search_area)
+    build_search(app.search_area, app)
     build_empty_state(content, app)
 
 
@@ -1759,25 +1827,29 @@ def build_summary(parent: tk.Widget, app: CadernoApp) -> None:
         ).pack(anchor="w")
 
 
-def build_search(parent: tk.Widget) -> None:
+def build_search(parent: tk.Widget, app: CadernoApp) -> None:
     row = tk.Frame(parent, bg=THEME.paper)
     row.pack(fill="x", pady=(0, THEME.layout.search_bottom_padding))
-    search = tk.Entry(
+    app.search_placeholder = "⌕   Buscar em títulos, coleções, hashtags e conteúdo…"
+    app.search_placeholder_visible = True
+    app.search_query = ""
+    app.search_entry = tk.Entry(
         row,
         relief="flat",
         bg=THEME.panel,
         fg=THEME.muted,
-        disabledbackground=THEME.panel,
-        disabledforeground=THEME.muted,
         insertbackground=THEME.green,
         highlightbackground=THEME.field_border,
         highlightcolor=THEME.green,
         highlightthickness=THEME.layout.highlight_thickness,
         font=THEME.font_body,
     )
-    search.insert(0, "⌕   Buscar por título, tema ou conteúdo…")
-    search.configure(state="disabled")
-    search.pack(
+    app.search_entry.insert(0, app.search_placeholder)
+    app.search_entry.bind("<FocusIn>", app._search_focus_in)
+    app.search_entry.bind("<FocusOut>", app._search_focus_out)
+    app.search_entry.bind("<KeyRelease>", app._search_key_release)
+    app.search_entry.bind("<Escape>", app._search_escape)
+    app.search_entry.pack(
         side="left", fill="x", expand=True, ipady=THEME.layout.search_vertical_padding,
         padx=(0, THEME.layout.search_gap),
     )

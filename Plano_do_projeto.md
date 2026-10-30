@@ -72,7 +72,8 @@ Construir um caderno de conhecimento offline para Macs Apple Silicon (`arm64`), 
 
 - [ ] Implementar criação, leitura, edição e exclusão de textos.
 - [ ] Implementar rascunhos e organização por coleção e hashtag.
-- [ ] Implementar busca, filtros, favoritos e ordenação.
+- [x] Implementar busca por título, conteúdo, coleção e hashtags; a consulta é temporária, combina todos os termos e preserva o rascunho enquanto filtra.
+- [ ] Implementar filtros por coleção/hashtag, favoritos e opções de ordenação.
 - [ ] Implementar editor e visualização Markdown, incluindo blocos de código e equações.
 - [ ] Implementar anexar imagens por arquivo e colagem da área de transferência.
 - [ ] Implementar calendário baseado nas datas dos textos.
@@ -124,7 +125,7 @@ Produzir o pacote em um Mac arm64, validar as arquiteturas das dependências e t
 - A revisão cética reproduziu defeitos de UI que foram corrigidos com regressões: o seletor recebe `⌘S`/`Escape`; rótulos permanecem únicos mesmo com colisões entre sufixos gerados e nomes literais; tentativas de criar nomes duplicados mostram alerta e não persistem outra coleção.
 - Alertas de erro/aviso/informação e a entrada de nome de coleção usam `Toplevel` próprios do app, com estilo compartilhado e confirmação/cancelamento por teclado. Senha e alterações pendentes também usam modais próprios. A suíte cobre tema, modalidade e atalhos; o usuário confirmou a aparência do alerta de duplicidade. O novo modal de texto deve ser conferido pela janela real via `testar_ui.command`.
 - Os seletores de abrir/criar base e coleção agora são janelas do próprio app, sem `filedialog` ou `ttk`; a navegação permite filtrar `.cpv` e respeita a raiz do perfil sintético. As preferências selecionam o diretório convencional de cada plataforma, com override para testes.
-- 75 testes focados passaram após a auditoria. O `.app` arm64 foi reconstruído; os binários nativos passaram, o probe de UI/Tk empacotado completou criar/salvar/fechar/reabrir com cofre sintético e o probe CPV1 separado passou. Interação física com a janela principal permanece pendente.
+- 80 testes focados passaram após a implementação da busca. A build arm64 e os probes UI/Tk e CPV1 empacotados foram repetidos e passaram; interação física com a janela principal permanece pendente.
 
 ### Processo de desenvolvimento da UI e das funcionalidades
 
@@ -189,7 +190,7 @@ Legenda: ██ trabalho previsto; .. sem atividade prevista.
 ## Acompanhamento
 
 - **Estado atual:** primeira versão restrita a Apple Silicon (`arm64`), macOS 14 Sonoma ou posterior, Tkinter e distribuição inicial para uso próprio/testes.
-- **Estado da UI:** criar, escolher, abrir e fechar base estão implementados. Notas podem ser listadas, criadas e editadas com rascunho local e salvamento explícito; coleção e hashtags são editáveis e persistidas, e o fechamento protege alterações pendentes inclusive nos metadados. Alertas, entradas de texto, seletores de coleção e navegação de bases são modais próprios do app. 75 testes focados passaram com fixtures sintéticas; a build arm64 e os smokes empacotados passaram. O launcher e o roteiro de janela real estão em [`testar_ui.command`](testar_ui.command).
+- **Estado da UI:** criar, escolher, abrir e fechar base estão implementados. Notas podem ser listadas, criadas e editadas com rascunho local e salvamento explícito; coleção e hashtags são editáveis e persistidas, e o fechamento protege alterações pendentes inclusive nos metadados. Busca por título, conteúdo, coleção e hashtags está implementada. Alertas, entradas de texto, seletores de coleção e navegação de bases são modais próprios do app. 80 testes focados passaram com fixtures sintéticas; a build arm64 e os smokes empacotados passaram. O launcher e o roteiro de janela real estão em [`testar_ui.command`](testar_ui.command).
 - **Estado do cofre:** protótipo CPV1 isolado, testado com backend PyNaCl e fixtures sintéticas. Resultados e pendências atuais estão em [`Plano_de_desenvolvimento_criptografia.md`](Plano_de_desenvolvimento_criptografia.md).
 - **Próximo marco:** repetir na janela do `.app` extraído o fluxo de nomes duplicados, atalhos no seletor e persistência. Validações de sistemas operacionais antigos ficam adiadas para distribuição.
 - **Atualizado em:** 2026-10-29.

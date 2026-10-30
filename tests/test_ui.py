@@ -107,6 +107,21 @@ class FakeEditorWidget:
         pass
 
 
+class FakeSearchEntry(FakeEditorWidget):
+    def __init__(self, *_args, **options):
+        super().__init__(*_args, **options)
+        self.value = ""
+
+    def insert(self, _index, value):
+        self.value += value
+
+    def delete(self, *_args):
+        self.value = ""
+
+    def get(self):
+        return self.value
+
+
 class FakeStringVar:
     def __init__(self, _master=None, value=""):
         self.value = value
@@ -492,6 +507,56 @@ def test_choice_dialog_uses_theme_and_returns_selection_or_cancel(monkeypatch):
 def test_ui_does_not_import_native_file_dialog_or_platform_ttk_widgets():
     assert not hasattr(ui, "filedialog")
     assert not hasattr(ui, "ttk")
+
+
+def test_search_control_uses_application_entry_with_clear_and_escape_bindings(monkeypatch):
+    entry = FakeSearchEntry()
+    options = {}
+    monkeypatch.setattr(ui.tk, "Frame", FakeEditorWidget)
+
+    def make_search_entry(*_args, **entry_options):
+        options.update(entry_options)
+        return entry
+
+    monkeypatch.setattr(ui.tk, "Entry", make_search_entry)
+    monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeEditorWidget())
+    app = bare_app()
+
+    ui.build_search(FakeEditorWidget(), app)
+
+    assert entry.value == app.search_placeholder
+    assert options["fg"] == ui.THEME.muted
+    assert {"<FocusIn>", "<FocusOut>", "<KeyRelease>", "<Escape>"} <= set(entry.bindings)
+    entry.bindings["<FocusIn>"](None)
+    assert entry.value == "" and not app.search_placeholder_visible
+    entry.insert(0, "sintético")
+    entry.bindings["<KeyRelease>"](None)
+    assert app.search_query == "sintético"
+    assert entry.bindings["<Escape>"](None) == "break"
+    assert entry.value == "" and app.search_query == ""
+
+
+def test_search_is_enabled_only_when_a_vault_is_open():
+    app = bare_app()
+    app.search_placeholder = "Buscar"
+    app.search_entry = Mock()
+    app.status = Mock()
+    app.status_detail = Mock()
+    app.close_button = Mock()
+    app.summary_values = []
+    app.update_summary = Mock()
+    app.render_state = Mock()
+
+    app.show_locked()
+    assert app.search_query == ""
+    app.search_entry.configure.assert_any_call(state="disabled", fg=ui.THEME.muted)
+    app.search_area.reset_mock()
+
+    session = Mock(path=Path("synthetic.cpv"), snapshot=Mock(document={"entries": [], "collections": []}))
+    app.show_unlocked(session)
+
+    app.search_entry.configure.assert_called_with(state="normal")
+    app.search_area.pack.assert_called_once_with(fill="x", before=app.state_area)
 
 
 def test_unsaved_dialog_binds_save_discard_and_cancel_shortcuts(monkeypatch):

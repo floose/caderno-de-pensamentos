@@ -73,7 +73,9 @@ def test_ui_text_fits_at_default_and_minimum_window_widths():
         - 2 * layout.button_horizontal_padding - 2 * layout.highlight_thickness
         - layout.search_gap - 2 * layout.highlight_thickness
         )
-        placeholder_width = _text_width(theme.font_body, "⌕   Buscar por título, tema ou conteúdo…")
+        placeholder_width = _text_width(
+            theme.font_body, "⌕   Buscar em títulos, coleções, hashtags e conteúdo…",
+        )
         assert placeholder_width <= search_width
 
 
