@@ -23,6 +23,7 @@ def _run_ui_flow(profile: Path) -> None:
     try:
         _create_empty_vault(app, vault_path)
         _save_synthetic_note(app)
+        _exercise_search_and_filters(app)
         _reject_duplicate_collection(app)
         _close_and_reopen_vault(app, vault_path)
     finally:
@@ -56,6 +57,26 @@ def _reject_duplicate_collection(app) -> None:
     assert not app.add_collection()
     assert [item["name"] for item in app.session.snapshot.document["collections"]] == ["Geral"]
     assert alerts == [(app.root, "Coleção existente", "Já existe uma coleção chamada “geral”.")]
+
+
+def _exercise_search_and_filters(app) -> None:
+    app.set_search_query("empacotamento")
+    assert app.note_entry_ids == [app.active_entry_id]
+    ask_filters = ui.ask_filters
+    try:
+        ui.ask_filters = lambda *_args: ("default", "empacotamento")
+        app.choose_filters()
+        assert app.collection_filter_id == "default"
+        assert app.tag_filter == "empacotamento"
+        app.set_search_query("sem resultado")
+        assert app.note_list.get(0) == "Nenhuma nota encontrada"
+        app.set_search_query("")
+        assert app.note_entry_ids == [app.active_entry_id]
+        ui.ask_filters = lambda *_args: (None, None)
+        app.choose_filters()
+        assert app.collection_filter_id is None and app.tag_filter is None
+    finally:
+        ui.ask_filters = ask_filters
 
 
 def _close_and_reopen_vault(app, vault_path: Path) -> None:

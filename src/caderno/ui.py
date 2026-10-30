@@ -65,6 +65,8 @@ class UILayout:
     path_dialog_padding: int
     choice_dialog_size: tuple
     choice_dialog_padding: int
+    filter_dialog_size: tuple
+    filter_dialog_padding: int
     unsaved_dialog_size: tuple
     unsaved_dialog_padding: int
     notes_list_width: int
@@ -176,6 +178,7 @@ THEME = UITheme(
         text_dialog_size=(480, 260), text_dialog_padding=24,
         path_dialog_size=(720, 520), path_dialog_padding=20,
         choice_dialog_size=(440, 380), choice_dialog_padding=22,
+        filter_dialog_size=(560, 560), filter_dialog_padding=22,
         unsaved_dialog_size=(520, 220), unsaved_dialog_padding=24,
         notes_list_width=190, notes_list_gap=18,
     ),
@@ -786,6 +789,121 @@ def ask_choice(parent, title: str, prompt: str, options: list[tuple[str, str]], 
     return dialog.result
 
 
+class FilterDialog:
+    """Seleciona coleção e hashtag em um modal estilizado do aplicativo."""
+
+    def __init__(self, parent, collections, tags, selected_collection, selected_tag):
+        self.result = None
+        self.collection_options = [(None, "Todas as coleções"), *collections]
+        self.tag_options = [(None, "Todas as hashtags"), *((tag, tag) for tag in tags)]
+        self.window = tk.Toplevel(parent)
+        self.window.withdraw()
+        self.window.title("Filtrar notas")
+        self.window.configure(bg=THEME.paper)
+        self.window.resizable(False, False)
+        self.window.transient(parent)
+        self._build_content(selected_collection, selected_tag)
+        self.window.bind("<Return>", self._apply_event)
+        self.window.bind("<Escape>", self._cancel_event)
+        self.window.protocol("WM_DELETE_WINDOW", self.cancel)
+        self._center_on_parent(parent)
+        self.window.deiconify()
+        self.window.grab_set()
+        self.window.after_idle(self.collection_list.focus_set)
+
+    def _build_content(self, selected_collection, selected_tag):
+        width, height = THEME.layout.filter_dialog_size
+        panel = tk.Frame(
+            self.window, bg=THEME.state_panel, padx=THEME.layout.filter_dialog_padding,
+        )
+        panel.pack(fill="both", expand=True, padx=18, pady=18)
+        tk.Label(
+            panel, text="Filtrar notas", bg=THEME.state_panel,
+            fg=THEME.state_title, font=THEME.font_heading,
+        ).pack(anchor="w", pady=(0, 12))
+        self.collection_list = self._build_picker(
+            panel, "Coleção", self.collection_options, selected_collection,
+        )
+        self.tag_list = self._build_picker(panel, "Hashtag", self.tag_options, selected_tag)
+        self._build_actions(panel)
+        self.window.geometry(f"{width}x{height}")
+        self.window.minsize(width, height)
+
+    def _build_picker(self, parent, title, options, selected_value):
+        group = tk.Frame(parent, bg=THEME.state_panel)
+        group.pack(fill="both", expand=True, pady=(0, 10))
+        tk.Label(
+            group, text=title, bg=THEME.state_panel, fg=THEME.ink, font=THEME.font_label,
+        ).pack(anchor="w", pady=(0, 4))
+        area = tk.Frame(group, bg=THEME.state_panel)
+        area.pack(fill="both", expand=True)
+        items = tk.Listbox(
+            area, bg=THEME.panel, fg=THEME.ink,
+            selectbackground=THEME.selected_navigation_background,
+            selectforeground=THEME.selected_navigation_foreground,
+            font=THEME.font_body, relief="flat",
+            highlightbackground=THEME.field_border, highlightcolor=THEME.green,
+            highlightthickness=THEME.layout.highlight_thickness,
+        )
+        scrollbar = tk.Scrollbar(area, orient="vertical", command=items.yview)
+        items.configure(yscrollcommand=scrollbar.set)
+        items.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        selected_index = 0
+        for index, (value, label) in enumerate(options):
+            items.insert("end", label)
+            if value == selected_value:
+                selected_index = index
+        items.selection_set(selected_index)
+        items.see(selected_index)
+        return items
+
+    def _build_actions(self, parent):
+        actions = tk.Frame(parent, bg=THEME.state_panel)
+        actions.pack(fill="x", pady=(4, 0))
+        make_button(actions, "Cancelar", "secondary", pady=8, command=self.cancel).pack(
+            side="right", padx=(8, 0),
+        )
+        make_button(actions, "Aplicar", "primary", pady=8, command=self.apply).pack(side="right")
+
+    def apply(self):
+        collection = self._selected_value(self.collection_list, self.collection_options)
+        tag = self._selected_value(self.tag_list, self.tag_options)
+        self.result = collection, tag
+        self.window.destroy()
+
+    @staticmethod
+    def _selected_value(listbox, options):
+        selection = listbox.curselection()
+        index = selection[0] if selection and selection[0] < len(options) else 0
+        return options[index][0]
+
+    def _apply_event(self, _event=None):
+        self.apply()
+        return "break"
+
+    def _cancel_event(self, _event=None):
+        self.cancel()
+        return "break"
+
+    def cancel(self):
+        self.window.destroy()
+
+    def _center_on_parent(self, parent):
+        self.window.update_idletasks()
+        width, height = THEME.layout.filter_dialog_size
+        x = parent.winfo_rootx() + max((parent.winfo_width() - width) // 2, 0)
+        y = parent.winfo_rooty() + max((parent.winfo_height() - height) // 2, 0)
+        self.window.geometry(f"{width}x{height}+{x}+{y}")
+
+
+def ask_filters(parent, collections, tags, selected_collection, selected_tag):
+    """Abre o modal de filtros e retorna as escolhas ou None ao cancelar."""
+    dialog = FilterDialog(parent, collections, tags, selected_collection, selected_tag)
+    parent.wait_window(dialog.window)
+    return dialog.result
+
+
 class UnsavedChangesDialog:
     """Pede uma decisão explícita antes de descartar um rascunho alterado."""
 
@@ -871,6 +989,8 @@ class CadernoApp:
         self.saved_collection_id = None
         self.saved_tags = []
         self.collection_id_by_label = {}
+        self.collection_filter_id = None
+        self.tag_filter = None
         self.editor_metadata_ready = False
         root.title("Caderno de Pensamentos")
         root.geometry(f"{THEME.layout.window_size[0]}x{THEME.layout.window_size[1]}")
@@ -1015,6 +1135,7 @@ class CadernoApp:
         if self.session is not None:
             self.session.close()
         self.session = session
+        self._reset_search_for_locked_view()
         self.active_entry_id = self._first_entry_id(session.snapshot.document)
         self.show_unlocked(session)
 
@@ -1049,6 +1170,9 @@ class CadernoApp:
         search_entry = getattr(self, "search_entry", None)
         if search_entry is not None:
             search_entry.configure(state="normal")
+        filter_button = getattr(self, "filter_button", None)
+        if filter_button is not None:
+            filter_button.configure(state="normal")
         self.close_button.pack(fill="x", padx=8, pady=(8, 0))
         self.update_summary(session.snapshot.document)
         self._render_collection_list()
@@ -1081,6 +1205,11 @@ class CadernoApp:
     def _reset_search_for_locked_view(self):
         """Limpa a busca ao fechar a base e desativa o campo bloqueado."""
         self.search_query = ""
+        self.collection_filter_id = None
+        self.tag_filter = None
+        filter_button = getattr(self, "filter_button", None)
+        if filter_button is not None:
+            filter_button.configure(text="Filtrar ▾", state="disabled")
         search_entry = getattr(self, "search_entry", None)
         if search_entry is None:
             return
@@ -1121,6 +1250,32 @@ class CadernoApp:
         if getattr(self, "session", None) is not None and hasattr(self, "note_list"):
             self._populate_note_list()
 
+    def choose_filters(self):
+        """Abre filtros temporários de coleção e hashtag para a lista atual."""
+        if self.session is None:
+            return
+        document = self.session.snapshot.document
+        collections = [(item["id"], item["name"]) for item in document["collections"]]
+        tags = self._available_tags(document)
+        selection = ask_filters(
+            self.root, collections, tags, self.collection_filter_id, self.tag_filter,
+        )
+        if selection is None:
+            return
+        self.collection_filter_id, self.tag_filter = selection
+        self._update_filter_button()
+        self._populate_note_list()
+
+    @staticmethod
+    def _available_tags(document):
+        tags = {tag.casefold(): tag for entry in document["entries"] for tag in entry["tags"]}
+        return sorted(tags.values(), key=str.casefold)
+
+    def _update_filter_button(self):
+        active = int(self.collection_filter_id is not None) + int(self.tag_filter is not None)
+        label = f"Filtros ({active}) ▾" if active else "Filtrar ▾"
+        self.filter_button.configure(text=label)
+
     def _matching_entries(self):
         document = self.session.snapshot.document
         collections = {item["id"]: item["name"] for item in document["collections"]}
@@ -1128,6 +1283,7 @@ class CadernoApp:
         return [
             entry for entry in entries
             if self._entry_matches_query(entry, collections, self.search_query)
+            and self._entry_matches_filters(entry)
         ]
 
     @staticmethod
@@ -1140,13 +1296,19 @@ class CadernoApp:
         )).casefold()
         return all(term in searchable for term in query.split())
 
+    def _entry_matches_filters(self, entry) -> bool:
+        if self.collection_filter_id and entry["collection_id"] != self.collection_filter_id:
+            return False
+        tags = {tag.casefold() for tag in entry["tags"]}
+        return self.tag_filter is None or self.tag_filter.casefold() in tags
+
     def _populate_note_list(self):
         entries = self._matching_entries()
         self.note_list.delete(0, "end")
         self.note_entry_ids = [entry["id"] for entry in entries]
         for entry in entries:
             self.note_list.insert("end", entry["title"])
-        if not entries and self.search_query:
+        if not entries and (self.search_query or self.collection_filter_id or self.tag_filter):
             self.note_list.insert("end", "Nenhuma nota encontrada")
         if self.active_entry_id in self.note_entry_ids:
             index = self.note_entry_ids.index(self.active_entry_id)
@@ -1853,9 +2015,11 @@ def build_search(parent: tk.Widget, app: CadernoApp) -> None:
         side="left", fill="x", expand=True, ipady=THEME.layout.search_vertical_padding,
         padx=(0, THEME.layout.search_gap),
     )
-    make_button(
-        row, "Ordenar: última edição  ▾", "secondary", pady=9, state="disabled"
-    ).pack(side="right")
+    app.filter_button = make_button(
+        row, "Filtrar ▾", "secondary", pady=9,
+        command=app.choose_filters, state="disabled",
+    )
+    app.filter_button.pack(side="right")
 
 
 def build_empty_state(parent: tk.Widget, app: CadernoApp) -> None:

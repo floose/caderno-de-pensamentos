@@ -64,6 +64,8 @@ def search_app():
         ],
     }))
     app.search_query = ""
+    app.collection_filter_id = None
+    app.tag_filter = None
     app.active_entry_id = "entry-art"
     app.note_entry_ids = []
     app.note_list = FakeNoteList()
@@ -272,6 +274,46 @@ def test_search_empty_result_shows_empty_state_and_ignores_selection():
     app.note_list.selection_set(0)
     ui.CadernoApp._select_list_entry(app)
     app.select_entry.assert_not_called()
+
+
+def test_collection_and_tag_filters_combine_with_search_without_resetting_draft(monkeypatch):
+    app = search_app()
+    app.root = object()
+    app.filter_button = Mock()
+    app.set_search_query("planejar")
+    choose = Mock(return_value=("collection-ideas", "desenho"))
+    monkeypatch.setattr(ui, "ask_filters", choose)
+
+    ui.CadernoApp.choose_filters(app)
+
+    assert app.collection_filter_id == "collection-ideas"
+    assert app.tag_filter == "desenho"
+    assert app.note_entry_ids == ["entry-art"]
+    assert app.title_entry.value == "rascunho não salvo"
+    app.filter_button.configure.assert_called_once_with(text="Filtros (2) ▾")
+    choose.assert_called_once_with(
+        app.root,
+        [("collection-ideas", "Ideias")],
+        ["desenho", "memória", "tela"],
+        None,
+        None,
+    )
+
+
+def test_cancelled_filter_dialog_preserves_existing_filter_state(monkeypatch):
+    app = search_app()
+    app.root = object()
+    app.collection_filter_id = "collection-ideas"
+    app.tag_filter = "desenho"
+    app.filter_button = Mock()
+    choose = Mock(return_value=None)
+    monkeypatch.setattr(ui, "ask_filters", choose)
+
+    ui.CadernoApp.choose_filters(app)
+
+    assert app.collection_filter_id == "collection-ideas"
+    assert app.tag_filter == "desenho"
+    app.filter_button.configure.assert_not_called()
 
 
 def test_add_collection_persists_real_vault_and_rejects_duplicate_name(tmp_path, monkeypatch):

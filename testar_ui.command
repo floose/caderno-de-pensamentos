@@ -67,6 +67,7 @@ printf 'Na janela, crie uma coleção pelo +: a entrada do nome e os alertas dev
 printf 'Associe a coleção a uma nota e informe hashtags como #ideia, #projeto. Tente criar outra coleção com o mesmo nome, inclusive mudando maiúsculas: o popup informa que ela já existe e não a cria.\n'
 printf 'Os seletores de abrir/criar base e coleção devem usar janelas do Caderno. Teste navegar por pastas, filtrar bases .cpv e usar Cancelar/Escape; a janela de coleção deve permitir escolher ou cancelar.\n'
 printf 'Na base aberta, busque termos de título, coleção, hashtag e conteúdo; a lista deve mostrar notas que contenham todos os termos. Escape limpa a busca; filtrar não deve apagar o rascunho aberto.\n'
+printf 'Abra Filtrar: escolha uma coleção e uma hashtag, aplique e confira que ambos restringem a lista junto com a busca. Use Todas as coleções/hashtags para limpar; Escape cancela sem alterar filtros. Fechar a base limpa os filtros.\n'
 printf 'No seletor de coleção, teste ⌘S para salvar e Escape para abrir as opções de alterações pendentes.\n'
 printf 'Salve, feche e reabra a base: coleção e hashtags devem continuar na nota.\n\n'
 "$PYTHON_BIN" -m caderno
