@@ -605,7 +605,10 @@ class PathDialog:
 
     def _navigate(self, path: Path):
         try:
-            target = path.expanduser().resolve(strict=True)
+            candidate = Path(os.path.abspath(Path(path).expanduser()))
+            if self._contains_symlink(candidate):
+                raise ValueError
+            target = candidate.resolve(strict=True)
             if not target.is_dir() or not self._is_allowed(target):
                 raise ValueError
         except (OSError, RuntimeError, ValueError):
@@ -640,6 +643,14 @@ class PathDialog:
         if not candidate.is_absolute():
             candidate = self.directory / candidate
         try:
+            candidate = Path(os.path.abspath(candidate))
+            if self._contains_symlink(candidate):
+                show_alert(
+                    self.window,
+                    "Caminho inválido",
+                    "Caminhos com links simbólicos não são aceitos para bases.",
+                )
+                return None
             resolved = candidate.resolve(strict=self.mode == "open")
             if not self._is_allowed(resolved):
                 raise ValueError
@@ -651,12 +662,30 @@ class PathDialog:
             else:
                 if resolved.parent != self.directory or not resolved.parent.is_dir():
                     raise ValueError
+                if resolved.suffix and resolved.suffix.casefold() != ".cpv":
+                    show_alert(
+                        self.window,
+                        "Extensão inválida",
+                        "As bases do Caderno usam a extensão .cpv. Informe um nome terminado em .cpv.",
+                    )
+                    return None
                 if not resolved.suffix:
+                    candidate = candidate.with_suffix(".cpv")
                     resolved = resolved.with_suffix(".cpv")
         except (OSError, RuntimeError, ValueError):
             show_alert(self.window, "Caminho inválido", "Escolha um arquivo permitido nesta pasta.")
             return None
-        return resolved
+        return candidate
+
+    @staticmethod
+    def _contains_symlink(path: Path) -> bool:
+        """Detecta links em qualquer componente sem resolver o caminho antes da API."""
+        current = path
+        while current != current.parent:
+            if current.is_symlink():
+                return True
+            current = current.parent
+        return current.is_symlink()
 
     def _is_allowed(self, path: Path) -> bool:
         if self.allowed_root is None:
@@ -705,6 +734,21 @@ def ask_path(parent, mode: Literal["open", "save"], initialdir: Path,
     dialog = PathDialog(parent, mode, initialdir, allowed_root)
     parent.wait_window(dialog.window)
     return dialog.result
+
+
+def _vault_dialog_initial_directory(test_profile: str | None) -> Path:
+    """Escolhe pasta inicial respeitando o perfil de teste e a última base válida."""
+    if test_profile:
+        return Path(test_profile)
+    last_vault = load_last_vault()
+    if last_vault is not None:
+        try:
+            resolved = Path(last_vault).expanduser().resolve(strict=True)
+            if resolved.is_file():
+                return resolved.parent
+        except (OSError, RuntimeError):
+            pass
+    return Path.home()
 
 
 class ChoiceDialog:
@@ -1061,7 +1105,7 @@ class CadernoApp:
     def create(self):
         """Pede destino e senha, cria cofre vazio e só então lembra o caminho."""
         profile = os.environ.get("CADERNO_UI_TEST_PROFILE")
-        initialdir = Path(profile) if profile else Path.home()
+        initialdir = _vault_dialog_initial_directory(profile)
         target = ask_path(self.root, "save", initialdir, Path(profile) if profile else None)
         if target is None:
             return
@@ -1073,7 +1117,7 @@ class CadernoApp:
             )
             return
         if target.exists():
-            show_alert(self.root, "Não foi possível criar", "Já existe um arquivo nesse local.")
+            show_alert(self.root, "Não foi possível criar", "Já existe uma base com esse nome nesta pasta.")
             return
         password = ask_password(self.root, "Criar base", "Escolha uma senha para esta base.", "Continuar")
         if password is None:
@@ -1097,7 +1141,7 @@ class CadernoApp:
         try:
             session = create_vault(target, password, VaultSnapshot(document))
         except FileExistsError:
-            show_alert(self.root, "Não foi possível criar", "Já existe um arquivo nesse local.")
+            show_alert(self.root, "Não foi possível criar", "Já existe uma base com esse nome nesta pasta.")
             return
         except DurabilityUncertainError:
             show_alert(
@@ -1116,7 +1160,7 @@ class CadernoApp:
     def choose(self):
         """Seleciona um arquivo de cofre e solicita a senha sem persistí-la."""
         profile = os.environ.get("CADERNO_UI_TEST_PROFILE")
-        initialdir = Path(profile) if profile else Path.home()
+        initialdir = _vault_dialog_initial_directory(profile)
         target = ask_path(self.root, "open", initialdir, Path(profile) if profile else None)
         if target is not None:
             self.unlock(target)

@@ -42,6 +42,11 @@ if [ "$DATA_OWNER" != "$APP_UID" ]; then
     fail 'A pasta de teste existente não pertence a este usuário.'
 fi
 chmod 700 "$TEST_DATA_DIR" || fail 'Não consegui proteger a pasta de teste.'
+PATH_PROBE_DIR=$(mktemp -d "$TEST_DATA_DIR/path-symlink-probe.XXXXXX") || fail 'Não consegui preparar o cenário sintético de symlink.'
+mkdir -p "$PATH_PROBE_DIR/real-folder" || fail 'Não consegui preparar a pasta sintética de navegação.'
+: > "$PATH_PROBE_DIR/real.cpv" || fail 'Não consegui preparar o arquivo sintético de symlink.'
+ln -s "$PATH_PROBE_DIR/real.cpv" "$PATH_PROBE_DIR/alias.cpv" || fail 'Não consegui criar o symlink sintético de arquivo.'
+ln -s "$PATH_PROBE_DIR/real-folder" "$PATH_PROBE_DIR/alias-folder" || fail 'Não consegui criar o symlink sintético de pasta.'
 
 cd "$PROJECT_ROOT" || fail 'Não consegui entrar na pasta do projeto.'
 export PYTHONPATH="$PROJECT_ROOT/src"
@@ -65,7 +70,8 @@ printf '\nAbrindo o Caderno com perfil de teste em: %s\n' "$TEST_DATA_DIR"
 printf 'Use somente cofres sintéticos neste perfil de teste.\n\n'
 printf 'Na janela, crie uma coleção pelo +: a entrada do nome e os alertas devem usar diálogos do próprio Caderno, com cores e fontes do tema. Escape cancela a entrada; Enter ou Criar confirma.\n'
 printf 'Associe a coleção a uma nota e informe hashtags como #ideia, #projeto. Tente criar outra coleção com o mesmo nome, inclusive mudando maiúsculas: o popup informa que ela já existe e não a cria.\n'
-printf 'Os seletores de abrir/criar base e coleção devem usar janelas do Caderno. Teste navegar por pastas, filtrar bases .cpv e usar Cancelar/Escape; a janela de coleção deve permitir escolher ou cancelar.\n'
+printf 'Os seletores de abrir/criar base e coleção devem usar janelas do Caderno. Abrir/criar deve começar na pasta da última base válida; se ela não estiver disponível, deve começar na sua pasta pessoal. No perfil sintético, deve permanecer na pasta indicada no Terminal. Teste navegar por pastas, filtrar bases .cpv e usar Cancelar/Escape; ao criar, informe um nome sem extensão e confirme que .cpv é acrescentado; informe também um nome .txt e confirme que o popup rejeita a extensão. Na pasta de prova impressa acima, tente abrir alias.cpv e entrar em alias-folder: ambos devem ser recusados com alerta, sem abrir nem navegar até o destino. A janela de coleção deve permitir escolher ou cancelar.\n'
+printf 'Pasta de prova de symlinks: %s\n' "$PATH_PROBE_DIR"
 printf 'Ao abrir uma base sintética, digite a senha no campo e pressione Enter: deve ter o mesmo efeito do botão Abrir base. Repita com senha incorreta: o alerta de falha deve aparecer; feche-o e tente abrir a base novamente.\n'
 printf 'Na base aberta, busque termos de título, coleção, hashtag e conteúdo; a lista deve mostrar notas que contenham todos os termos. Escape limpa a busca; filtrar não deve apagar o rascunho aberto.\n'
 printf 'No editor, clique no seletor de coleção: o modal deve mostrar os nomes das coleções, nunca IDs. Escolha outra coleção, confira o nome no botão, salve e reabra a base para confirmar a persistência da mudança.\n'

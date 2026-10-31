@@ -1,6 +1,8 @@
 from pathlib import Path
 from unittest.mock import Mock
 
+import pytest
+
 from caderno import ui
 from caderno.vault import VaultSnapshot
 
@@ -487,6 +489,119 @@ def test_path_dialog_adds_extension_and_rejects_paths_outside_profile(tmp_path, 
     alert.assert_called_once()
 
 
+def test_path_dialog_rejects_non_cpv_extension_for_new_vault(tmp_path, monkeypatch):
+    install_path_dialog_widgets(monkeypatch)
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
+    alert = Mock()
+    monkeypatch.setattr(ui, "show_alert", alert)
+
+    dialog = ui.PathDialog(FakePasswordParent(), "save", profile)
+    dialog.name_entry.value = "notes.txt"
+    dialog.submit()
+
+    assert dialog.result is None
+    assert not dialog.window.destroyed
+    alert.assert_called_once()
+    assert alert.call_args.args[1] == "Extensão inválida"
+
+
+def test_path_dialog_rejects_symlink_vault_file_before_resolving_it(tmp_path, monkeypatch):
+    install_path_dialog_widgets(monkeypatch)
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    target = profile / "real.cpv"
+    target.touch()
+    alias = profile / "alias.cpv"
+    try:
+        alias.symlink_to(target)
+    except OSError as error:
+        pytest.skip(f"O sistema de arquivos não permite symlinks: {error}")
+    monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
+    alert = Mock()
+    monkeypatch.setattr(ui, "show_alert", alert)
+
+    dialog = ui.PathDialog(FakePasswordParent(), "open", profile)
+    dialog.name_entry.value = alias.name
+    dialog.submit()
+
+    assert dialog.result is None and not dialog.window.destroyed
+    alert.assert_called_once()
+    assert "links simbólicos" in alert.call_args.args[2]
+
+
+def test_path_dialog_rejects_symlink_in_vault_parent_path(tmp_path, monkeypatch):
+    install_path_dialog_widgets(monkeypatch)
+    real_directory = tmp_path / "real-directory"
+    real_directory.mkdir()
+    target = real_directory / "base.cpv"
+    target.touch()
+    alias_directory = tmp_path / "alias-directory"
+    try:
+        alias_directory.symlink_to(real_directory, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"O sistema de arquivos não permite symlinks: {error}")
+    monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
+    alert = Mock()
+    monkeypatch.setattr(ui, "show_alert", alert)
+
+    dialog = ui.PathDialog(FakePasswordParent(), "open", tmp_path)
+    dialog.name_entry.value = str(alias_directory / target.name)
+    dialog.submit()
+
+    assert dialog.result is None and not dialog.window.destroyed
+    alert.assert_called_once()
+    assert "links simbólicos" in alert.call_args.args[2]
+
+
+def test_path_dialog_cannot_navigate_into_symlink_directory(tmp_path, monkeypatch):
+    install_path_dialog_widgets(monkeypatch)
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    destination = tmp_path / "destination"
+    destination.mkdir()
+    shortcut = profile / "shortcut"
+    try:
+        shortcut.symlink_to(destination, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"O sistema de arquivos não permite symlinks: {error}")
+    monkeypatch.setattr(ui, "make_button", lambda *_args, **_kwargs: FakeDialogWidget())
+    alert = Mock()
+    monkeypatch.setattr(ui, "show_alert", alert)
+
+    dialog = ui.PathDialog(FakePasswordParent(), "open", profile)
+    dialog.file_list.selection = (0,)
+    dialog._activate_item()
+
+    assert dialog.directory == profile
+    assert dialog.file_list.items == ["[Pasta] shortcut"]
+    alert.assert_called_once()
+    assert alert.call_args.args[1] == "Pasta indisponível"
+
+
+def test_vault_dialog_starts_in_last_vault_parent_or_home(tmp_path, monkeypatch):
+    vault_directory = tmp_path / "vaults"
+    vault_directory.mkdir()
+    vault = vault_directory / "notes.cpv"
+    vault.touch()
+    monkeypatch.setattr(ui, "load_last_vault", lambda: vault)
+
+    assert ui._vault_dialog_initial_directory(None) == vault_directory
+
+    monkeypatch.setattr(ui, "load_last_vault", lambda: tmp_path / "missing.cpv")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    assert ui._vault_dialog_initial_directory(None) == tmp_path
+
+
+def test_vault_dialog_test_profile_overrides_last_vault(tmp_path, monkeypatch):
+    profile = tmp_path / "synthetic-profile"
+    profile.mkdir()
+    monkeypatch.setattr(ui, "load_last_vault", lambda: tmp_path / "real.cpv")
+
+    assert ui._vault_dialog_initial_directory(str(profile)) == profile
+
+
 def test_path_dialog_escape_cancels_and_all_files_filter_opens_other_extensions(tmp_path, monkeypatch):
     install_path_dialog_widgets(monkeypatch)
     profile = tmp_path / "profile"
@@ -769,7 +884,7 @@ def test_cancelled_create_picker_does_not_prompt_or_discard_editor_draft(monkeyp
     assert app.title_entry.value == "Rascunho que deve ficar"
 
 
-def test_create_existing_file_does_not_prompt_or_discard_editor_draft(tmp_path, monkeypatch):
+def test_create_existing_vault_name_alerts_and_preserves_editor_draft(tmp_path, monkeypatch):
     app = bare_app()
     app.session = Mock()
     app.title_entry.value = "Rascunho que deve ficar"
@@ -790,6 +905,30 @@ def test_create_existing_file_does_not_prompt_or_discard_editor_draft(tmp_path, 
     ask_password.assert_not_called()
     app._activate.assert_not_called()
     assert app.title_entry.value == "Rascunho que deve ficar"
+    showerror.assert_called_once_with(
+        app.root, "Não foi possível criar", "Já existe uma base com esse nome nesta pasta."
+    )
+
+
+def test_create_file_appearing_after_selection_shows_duplicate_vault_alert(tmp_path, monkeypatch):
+    app = bare_app()
+    target = tmp_path / "created-concurrently.cpv"
+    monkeypatch.delenv("CADERNO_UI_TEST_PROFILE", raising=False)
+    monkeypatch.setattr(ui, "ask_path", lambda *_args: target)
+    monkeypatch.setattr(ui, "ask_password", lambda *_args: "passphrase")
+    create = Mock(side_effect=FileExistsError(target))
+    monkeypatch.setattr(ui, "create_vault", create)
+    alert = Mock()
+    monkeypatch.setattr(ui, "show_alert", alert)
+
+    app.create()
+
+    create.assert_called_once()
+    app._activate.assert_not_called()
+    app._remember_path.assert_not_called()
+    alert.assert_called_once_with(
+        app.root, "Não foi possível criar", "Já existe uma base com esse nome nesta pasta."
+    )
 
 
 def test_rejected_test_profile_path_does_not_touch_pending_draft(tmp_path, monkeypatch):
