@@ -168,6 +168,12 @@ Use **Fechar base**, tente abrir com uma senha incorreta e confirme que aparece 
 
 Toda nova tela ou teste de UI deve ser conectado a este ponto único. Os callbacks Tkinter e o backend CPV1 real passaram por testes automatizados e por um aceite com janela Tk real. A tela bloqueada de uma prova do `.app` extraído abriu no Mac atual; a build atual passou pelos probes integrados sintéticos, mas ainda falta interação física com sua janela principal.
 
+### Medição repetível da listagem do seletor
+
+Para medir a resposta do navegador em diretórios grandes sem criar limites frágeis na suíte automatizada, execute `PYTHONPATH=src .venv/bin/python scripts/benchmark_path_dialog.py --entries 100 1000 5000 --samples 5`. O script cria arquivos `.cpv` vazios em diretórios temporários, mede a primeira atualização e as repetições de `_refresh_items` mais `update_idletasks`, e imprime JSON com o ambiente, mediana e faixa. A criação das fixtures fica fora do tempo medido; não há critérios de aprovação por milissegundos.
+
+Uma amostra em macOS 26.6.2 arm64, Python 3.13.7 e Tk 8.6 mediu primeiras atualizações de 2,0 ms, 19,0 ms e 74,6 ms para 100, 1.000 e 5.000 arquivos; as medianas das cinco repetições foram 1,4 ms, 16,8 ms e 65,2 ms. É uma referência de uma máquina e de cache aquecido após a primeira leitura, não uma garantia para discos lentos, pastas remotas ou outras máquinas. Rode novamente no ambiente que deseja comparar.
+
 Uma prova mínima do `.app` arm64, com Tkinter e PyNaCl, avança em paralelo à primeira fatia para identificar cedo problemas de empacotamento. O `.app` integrado precisa passar o ciclo de criar, abrir, salvar, reabrir e trocar senha antes do uso com dados pessoais.
 
 **Ciclo dos agentes por fatia:**
