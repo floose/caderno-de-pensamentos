@@ -333,6 +333,29 @@ def test_create_no_overwrite_stale_session_and_failed_replace(tmp_path, monkeypa
     session.close()
 
 
+def test_create_race_preserves_destination_created_before_atomic_link(tmp_path, monkeypatch):
+    """Não sobrescreve um destino que aparece entre a checagem e o link atômico."""
+    import caderno.vault.api as api
+
+    monkeypatch.setattr(api, "new_key", lambda password: (b"s" * 16, b"k" * 32))
+    monkeypatch.setattr(api, "encrypt_file", lambda output, snapshot, salt, key: output.write(b"synthetic ciphertext"))
+    target = tmp_path / "race.cpv"
+    sentinel = b"file created by a competing writer"
+    real_link = api.os.link
+
+    def create_competing_destination(source, destination, **kwargs):
+        Path(destination).write_bytes(sentinel)
+        return real_link(source, destination, **kwargs)
+
+    monkeypatch.setattr(api.os, "link", create_competing_destination)
+
+    with pytest.raises(FileExistsError):
+        api.create_vault(target, "synthetic password", fixture_snapshot())
+
+    assert target.read_bytes() == sentinel
+    assert list(tmp_path.glob(".cpvault-*")) == []
+
+
 def test_post_replace_directory_fsync_failure_updates_session(tmp_path, monkeypatch):
     """Simula falha de durabilidade após replace e verifica o estado visível da sessão."""
     import caderno.vault.api as api
